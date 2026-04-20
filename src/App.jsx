@@ -52,14 +52,14 @@ const INIT_CLIENTS_TOMAS = [
 
 
 const INIT_RECURRING_L = [
-  {id:"r1",name:"Obra Social",  amount:433000, active:true, userId:"lucia"},
-  {id:"r2",name:"Monotributo",  amount:17000,  active:true, userId:"lucia"},
-  {id:"r3",name:"Celular",      amount:20000,  active:true, userId:"lucia"},
-  {id:"r4",name:"Seguro",       amount:81274,  active:true, userId:"lucia"},
-  {id:"r5",name:"Gym",          amount:15000,  active:true, userId:"lucia"},
+  {id:"r1",name:"Obra Social",  amount:433000, active:true, userId:"lucia", owner:"Personal"},
+  {id:"r2",name:"Monotributo",  amount:17000,  active:true, userId:"lucia", owner:"Personal"},
+  {id:"r3",name:"Celular",      amount:20000,  active:true, userId:"lucia", owner:"Personal"},
+  {id:"r4",name:"Seguro",       amount:81274,  active:true, userId:"lucia", owner:"Personal"},
+  {id:"r5",name:"Gym",          amount:15000,  active:true, userId:"lucia", owner:"Personal"},
 ];
 const INIT_RECURRING_T = [
-  {id:"r6",name:"Expensas",     amount:22000,  active:true, userId:"tomas"},
+  {id:"r6",name:"Expensas",     amount:22000,  active:true, userId:"tomas", owner:"Casa"},
 ];
 
 const buildMonth = (y,m,cL,cT) => ({
@@ -276,6 +276,7 @@ export default function App() {
     {id:"dashboard", icon:"▦", label:"Dashboard"},
     {id:"conjunto",  icon:"⊞", label:"En conjunto"},
     {id:"fci",       icon:"◈", label:"Fondo inversión"},
+    {id:"historial", icon:"⏱", label:"Carga historial"},
     {id:"config",    icon:"⚙", label:"Configuración"},
   ];
 
@@ -459,6 +460,18 @@ export default function App() {
             <FciTab
               fciTotal={fciTotal} setFciTotal={setFciTotal}
               md={md} upd={upd} months={months} fmt={fmt} uid={uid} num={num}
+            />
+          )}
+
+          {/* ══ HISTORIAL ══ */}
+          {tab==="historial" && (
+            <HistorialTab
+              currentUser={currentUser} MONTHS={MONTHS} CY={CY}
+              categories={categories} cards={cards} payMethods={payMethods}
+              fmt={fmt} num={num} uid={uid}
+              syncGasto={syncGasto} syncIngreso={syncIngreso}
+              months={months} setMonths={setMonths} mk={mk}
+              clientsL={clientsL} clientsT={clientsT}
             />
           )}
 
@@ -1210,7 +1223,7 @@ function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categ
   const [newPay,     setNewPay]    =useState({name:"",icon:"💳"});
   const [newCat,     setNewCat]    =useState({name:"",icon:"📦"});
   const [newClientT, setNewClientT]=useState({name:"",amount:""});
-  const [newFixedT,  setNewFixedT] =useState({name:"",amount:""});
+  const [newFixedT,  setNewFixedT] =useState({name:"",amount:"",owner:"Personal"});
   const [showNC,setShowNC]=useState(false);
   const [showNP,setShowNP]=useState(false);
   const [showNCA,setShowNCA]=useState(false);
@@ -1395,14 +1408,26 @@ function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categ
                     if(currentUser.id==="lucia") setRecurringL(p=>p.map(x=>x.id===r.id?{...x,active:!x.active}:x));
                     else setRecurringT(p=>p.map(x=>x.id===r.id?{...x,active:!x.active}:x));
                   }}/>
-                <input className="inp" value={r.name}
-                  onChange={e=>{
-                    if(currentUser.id==="lucia") setRecurringL(p=>p.map(x=>x.id===r.id?{...x,name:e.target.value}:x));
-                    else setRecurringT(p=>p.map(x=>x.id===r.id?{...x,name:e.target.value}:x));
-                  }}
-                  style={{border:"none",background:"transparent",fontWeight:500,fontSize:13,padding:"2px 0"}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <input className="inp" value={r.name}
+                    onChange={e=>{
+                      if(currentUser.id==="lucia") setRecurringL(p=>p.map(x=>x.id===r.id?{...x,name:e.target.value}:x));
+                      else setRecurringT(p=>p.map(x=>x.id===r.id?{...x,name:e.target.value}:x));
+                    }}
+                    style={{border:"none",background:"transparent",fontWeight:500,fontSize:13,padding:"2px 0",width:"100%"}}/>
+                  <select className="inp" value={r.owner||"Personal"}
+                    onChange={e=>{
+                      if(currentUser.id==="lucia") setRecurringL(p=>p.map(x=>x.id===r.id?{...x,owner:e.target.value}:x));
+                      else setRecurringT(p=>p.map(x=>x.id===r.id?{...x,owner:e.target.value}:x));
+                    }}
+                    style={{fontSize:11,padding:"3px 7px",marginTop:2,width:"auto"}}>
+                    <option>Personal</option>
+                    <option>Casa</option>
+                    <option>Otro</option>
+                  </select>
+                </div>
               </div>
-              <div style={{display:"flex",gap:6}}>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
                 <input className="inp mono" type="number" value={r.amount}
                   onChange={e=>{
                     if(currentUser.id==="lucia") setRecurringL(p=>p.map(x=>x.id===r.id?{...x,amount:+e.target.value}:x));
@@ -1418,17 +1443,23 @@ function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categ
             </div>
           ))}
           {showNFT&&(
-            <div style={{marginTop:10,display:"flex",gap:7}}>
+            <div style={{marginTop:10,display:"flex",gap:7,flexWrap:"wrap"}}>
               <input className="inp" placeholder="Nombre (ej: Obra Social)" value={newFixedT.name}
-                onChange={e=>setNewFixedT(p=>({...p,name:e.target.value}))}/>
+                onChange={e=>setNewFixedT(p=>({...p,name:e.target.value}))} style={{flex:2,minWidth:130}}/>
+              <select className="inp" value={newFixedT.owner||"Personal"}
+                onChange={e=>setNewFixedT(p=>({...p,owner:e.target.value}))} style={{flex:1,minWidth:90}}>
+                <option>Personal</option>
+                <option>Casa</option>
+                <option>Otro</option>
+              </select>
               <input className="inp mono" type="number" placeholder="Monto" value={newFixedT.amount}
                 onChange={e=>setNewFixedT(p=>({...p,amount:e.target.value}))} style={{width:100}}/>
               <button className="btn btn-dark" style={{padding:"8px 12px"}} onClick={()=>{
                 if(!newFixedT.name) return;
-                const newR={id:uid(),name:newFixedT.name,amount:parseFloat(newFixedT.amount)||0,active:true,userId:currentUser.id};
+                const newR={id:uid(),name:newFixedT.name,amount:parseFloat(newFixedT.amount)||0,active:true,userId:currentUser.id,owner:newFixedT.owner||"Personal"};
                 if(currentUser.id==="lucia") setRecurringL(p=>[...p,newR]);
                 else setRecurringT(p=>[...p,newR]);
-                setNewFixedT({name:"",amount:""});setShowNFT(false);
+                setNewFixedT({name:"",amount:"",owner:"Personal"});setShowNFT(false);
               }}>+</button>
             </div>
           )}
@@ -1779,6 +1810,192 @@ function DashboardTab({users,months,cards,categories,fmt,num,MONTHS,CY,mk,client
           );
         })()}
       </div>
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════
+   HISTORIAL TAB — carga de datos históricos
+══════════════════════════════════════════════ */
+function HistorialTab({currentUser,MONTHS,CY,categories,cards,payMethods,fmt,num,uid,syncGasto,syncIngreso,months,setMonths,mk,clientsL,clientsT}){
+  const today = new Date();
+  const [form, setForm] = useState({
+    year: String(CY),
+    month: String(today.getMonth()),
+    type: "gasto",
+    owner: "Personal",
+    category: "",
+    categoryCustom: "",
+    payMethodId: "",
+    desc: "",
+    amount: "",
+    usuario: currentUser.id,
+  });
+  const [saved, setSaved] = useState([]);
+  const [showOk, setShowOk] = useState(false);
+
+  const allPay = [...cards.filter(c=>c.owner===currentUser.id), ...payMethods];
+  const allCats = [...categories.map(c=>c.name), "Ingreso cliente", "Otro"];
+
+  const save = () => {
+    if(!form.amount) return;
+    const mo = parseInt(form.month);
+    const yr = parseInt(form.year);
+    const mkey = mk(yr, mo);
+    const payObj = allPay.find(p=>p.id===form.payMethodId);
+    const isCard = cards.some(c=>c.id===form.payMethodId);
+    const catName = form.category==="Otro" ? form.categoryCustom : form.category;
+
+    if(form.type==="gasto"){
+      const exp = {
+        id:uid(), groupId:uid(), userId:form.usuario,
+        owner:form.owner, category:form.category, categoryName:catName,
+        payMethodId:form.payMethodId||"", payMethodName:payObj?.name||"Efectivo",
+        payType: isCard?"card":"transfer",
+        amount:num(form.amount), totalAmount:num(form.amount),
+        cuotas:1, cuotaNum:1, desc:form.desc||catName,
+        date:`${yr}-${String(mo+1).padStart(2,"0")}-01`,
+        month:MONTHS[mo], year:yr,
+      };
+      setMonths(prev=>{
+        const base = prev[mkey] || {key:mkey,expenses:[],clients_lucia:[],clients_tomas:[],fciMovements:[]};
+        return {...prev, [mkey]:{...base, expenses:[...(base.expenses||[]),exp]}};
+      });
+      syncGasto(exp, currentUser.name, MONTHS);
+    } else {
+      // ingreso
+      const cliente = {id:uid(), name:form.desc||"Ingreso histórico", amount:num(form.amount), active:true, paid:true};
+      const field = form.usuario==="lucia" ? "clients_lucia" : "clients_tomas";
+      setMonths(prev=>{
+        const base = prev[mkey] || {key:mkey,expenses:[],clients_lucia:[],clients_tomas:[],fciMovements:[]};
+        return {...prev, [mkey]:{...base, [field]:[...(base[field]||[]),cliente]}};
+      });
+      syncIngreso(cliente, form.usuario==="lucia"?"Lucía":"Tomás", MONTHS[mo], yr);
+    }
+
+    setSaved(p=>[...p,{...form,catName,payName:payObj?.name||"Efectivo",mes:MONTHS[mo],yr}]);
+    setShowOk(true);
+    setTimeout(()=>setShowOk(false),2000);
+    setForm(p=>({...p,amount:"",desc:""}));
+  };
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h1 style={{fontSize:20,fontWeight:600}}>Carga de historial</h1>
+        <p style={{fontSize:13,color:"#71717a"}}>Cargá datos de meses anteriores sin borrar lo que ya tenés</p>
+      </div>
+
+      <div className="card" style={{padding:22,marginBottom:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <div className="sec" style={{marginBottom:6}}>Mes</div>
+            <select className="inp" value={form.month} onChange={e=>setForm(p=>({...p,month:e.target.value}))}>
+              {MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="sec" style={{marginBottom:6}}>Año</div>
+            <select className="inp" value={form.year} onChange={e=>setForm(p=>({...p,year:e.target.value}))}>
+              {[CY-3,CY-2,CY-1,CY].map(y=><option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="sec" style={{marginBottom:6}}>Tipo</div>
+            <select className="inp" value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))}>
+              <option value="gasto">Gasto</option>
+              <option value="ingreso">Ingreso</option>
+            </select>
+          </div>
+          <div>
+            <div className="sec" style={{marginBottom:6}}>Usuario</div>
+            <select className="inp" value={form.usuario} onChange={e=>setForm(p=>({...p,usuario:e.target.value}))}>
+              <option value="lucia">Lucía</option>
+              <option value="tomas">Tomás</option>
+            </select>
+          </div>
+        </div>
+
+        {form.type==="gasto" && (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+            <div>
+              <div className="sec" style={{marginBottom:6}}>Para quién</div>
+              <select className="inp" value={form.owner} onChange={e=>setForm(p=>({...p,owner:e.target.value}))}>
+                <option>Personal</option>
+                <option>Casa</option>
+                <option>Otro</option>
+              </select>
+            </div>
+            <div>
+              <div className="sec" style={{marginBottom:6}}>Categoría</div>
+              <select className="inp" value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))}>
+                <option value="">— Elegir —</option>
+                {categories.map(c=><option key={c.id} value={c.name}>{c.icon} {c.name}</option>)}
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+            {form.category==="Otro" && (
+              <div style={{gridColumn:"1/-1"}}>
+                <div className="sec" style={{marginBottom:6}}>Nombre categoría</div>
+                <input className="inp" placeholder="Ej: Vacaciones" value={form.categoryCustom}
+                  onChange={e=>setForm(p=>({...p,categoryCustom:e.target.value}))}/>
+              </div>
+            )}
+            <div>
+              <div className="sec" style={{marginBottom:6}}>Medio de pago</div>
+              <select className="inp" value={form.payMethodId} onChange={e=>setForm(p=>({...p,payMethodId:e.target.value}))}>
+                <option value="">Efectivo</option>
+                {cards.filter(c=>c.owner===form.usuario).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                {payMethods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="sec" style={{marginBottom:6}}>Descripción (opcional)</div>
+              <input className="inp" placeholder="Ej: Supermercado DIA" value={form.desc}
+                onChange={e=>setForm(p=>({...p,desc:e.target.value}))}/>
+            </div>
+          </div>
+        )}
+
+        {form.type==="ingreso" && (
+          <div style={{marginBottom:12}}>
+            <div className="sec" style={{marginBottom:6}}>Cliente / descripción</div>
+            <input className="inp" placeholder="Ej: Cachipum" value={form.desc}
+              onChange={e=>setForm(p=>({...p,desc:e.target.value}))}/>
+          </div>
+        )}
+
+        <div style={{marginBottom:16}}>
+          <div className="sec" style={{marginBottom:6}}>Monto</div>
+          <input className="inp mono" type="number" placeholder="$ 0" value={form.amount}
+            onChange={e=>setForm(p=>({...p,amount:e.target.value}))}
+            style={{fontSize:18,fontWeight:500}}/>
+        </div>
+
+        <button className="btn btn-dark" style={{width:"100%"}} onClick={save}
+          disabled={!form.amount}>
+          {showOk ? "✓ Guardado" : "Guardar en historial"}
+        </button>
+      </div>
+
+      {/* Lo que se fue cargando en esta sesión */}
+      {saved.length>0 && (
+        <div className="card" style={{padding:18}}>
+          <div className="sec" style={{marginBottom:12}}>Cargado en esta sesión</div>
+          {saved.slice().reverse().map((s,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"6px 0",borderBottom:"1px solid #f4f4f5"}}>
+              <div>
+                <span style={{fontWeight:500}}>{s.desc||s.catName||s.category}</span>
+                <span style={{fontSize:11,color:"#a1a1aa",marginLeft:8}}>{s.mes} {s.yr} · {s.owner} · {s.payName}</span>
+              </div>
+              <span className="mono" style={{color:s.type==="ingreso"?"#15803d":"#dc2626"}}>
+                {s.type==="ingreso"?"+":"-"}{fmt(num(s.amount))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
