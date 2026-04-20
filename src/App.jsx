@@ -62,8 +62,12 @@ const INIT_RECURRING_T = [
   {id:"r6",name:"Expensas",     amount:22000,  active:true, userId:"tomas"},
 ];
 
-const buildMonth = (y,m) => ({
-  key:mk(y,m), expenses:[], clients_lucia:[], clients_tomas:[], fciMovements:[],
+const buildMonth = (y,m,cL,cT) => ({
+  key:mk(y,m),
+  expenses:[],
+  clients_lucia: (cL||[]).filter(c=>c.active).map(c=>({...c,id:uid(),paid:false,amount:c.amount})),
+  clients_tomas: (cT||[]).filter(c=>c.active).map(c=>({...c,id:uid(),paid:false,amount:c.amount})),
+  fciMovements:[],
 });
 
 /* ─── GOOGLE SHEETS SYNC via Apps Script ─── */
@@ -167,9 +171,12 @@ export default function App() {
   /* ── month data ── */
   const key = mk(sY,sM);
   useEffect(()=>{
-    setMonths(prev=>{ if(prev[key]) return prev; return {...prev,[key]:buildMonth(sY,sM)}; });
+    setMonths(prev=>{
+      if(prev[key]) return prev;
+      return {...prev,[key]:buildMonth(sY,sM,clientsL,clientsT)};
+    });
   },[key]);
-  const md  = months[key] || buildMonth(sY,sM);
+  const md  = months[key] || buildMonth(sY,sM,clientsL,clientsT);
   const upd = fn => setMonths(prev=>({...prev,[key]:fn(prev[key]||buildMonth(sY,sM))}));
 
   /* ── expense wizard ── */
@@ -192,8 +199,13 @@ export default function App() {
 
   const transferExp = myExp.filter(e=>e.payType!=="card");
 
-  const myClients = currentUser?.id==="lucia" ? clientsL : clientsT;
-  const setMyClients = currentUser?.id==="lucia" ? setClientsL : setClientsT;
+  const myClients = currentUser?.id==="lucia"
+    ? (md.clients_lucia||[])
+    : (md.clients_tomas||[]);
+  const setMyClients = (fn) => upd(d=>{
+    const field = currentUser?.id==="lucia" ? "clients_lucia" : "clients_tomas";
+    return {...d,[field]: typeof fn==='function' ? fn(d[field]||[]) : fn};
+  });
   const totalIncome = myClients.reduce((s,c)=>s+num(c.amount),0);
   const totalCards  = Object.values(cardTotals).reduce((s,v)=>s+v,0);
   const totalTransfer = transferExp.reduce((s,e)=>s+num(e.amount),0);
@@ -206,8 +218,8 @@ export default function App() {
   const luciaPersonal = allExp.filter(e=>e.userId==="lucia"&&e.owner==="Personal");
   const tomasPersonal = allExp.filter(e=>e.userId==="tomas"&&e.owner==="Personal");
   const otrosExp = allExp.filter(e=>e.owner!=="Casa"&&e.owner!=="Personal");
-  const luciaIncome = clientsL.reduce((s,c)=>s+num(c.amount),0);
-  const tomasIncome = clientsT.reduce((s,c)=>s+num(c.amount),0);
+  const luciaIncome = (md.clients_lucia||clientsL).reduce((s,c)=>s+num(c.amount),0);
+  const tomasIncome = (md.clients_tomas||clientsT).reduce((s,c)=>s+num(c.amount),0);
   const luciaOut  = allExp.filter(e=>e.userId==="lucia").reduce((s,e)=>s+num(e.amount),0);
   const tomasOut  = allExp.filter(e=>e.userId==="tomas").reduce((s,e)=>s+num(e.amount),0);
   const casaLucia = casaExp.filter(e=>e.userId==="lucia").reduce((s,e)=>s+num(e.amount),0);
@@ -228,7 +240,7 @@ export default function App() {
       let mo=startM+i, yr=startY;
       while(mo>11){mo-=12;yr++;}
       const mkey=mk(yr,mo);
-      const base=newMonths[mkey]||buildMonth(yr,mo);
+      const base=newMonths[mkey]||buildMonth(yr,mo,clientsL,clientsT);
       const exp = {
         id:uid(), groupId, userId:currentUser.id,
         owner: form.owner==="Otro" ? (form.ownerCustom||"Otro") : form.owner,
@@ -392,6 +404,7 @@ export default function App() {
               setRecurring={currentUser.id==="lucia"?setRecurringL:setRecurringT}
               upd={upd} md={md} fmt={fmt} num={num} uid={uid}
               openWizard={openWizard} months={months} mk={mk} CY={CY}
+              clientsL={clientsL} clientsT={clientsT}
             />
           )}
 
@@ -691,7 +704,7 @@ function ExpenseWizard({wizard,setWizard,categories,cards,payMethods,sM,sY,MONTH
 /* ══════════════════════════════════════════════
    RESUMEN TAB
 ══════════════════════════════════════════════ */
-function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards,cardTotals,transferExp,totalIncome,totalCards,totalTransfer,totalOut,resultado,fciTotal,setFciTotal,efectivo,setEfectivo,recurring,setRecurring,upd,md,fmt,num,uid,openWizard,months,mk,CY}){
+function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards,cardTotals,transferExp,totalIncome,totalCards,totalTransfer,totalOut,resultado,fciTotal,setFciTotal,efectivo,setEfectivo,recurring,setRecurring,upd,md,fmt,num,uid,openWizard,months,mk,CY,clientsL,clientsT}){
   const [editEfectivo,setEditEfectivo]=useState(false);
   const [efForm,setEfForm]=useState(String(efectivo));
 
@@ -708,7 +721,10 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
   const nextTotalTransfer=nextTransferExp.reduce((s,e)=>s+num(e.amount),0);
   const nextTotalRecurring=recurring.filter(r=>r.active).reduce((s,r)=>s+num(r.amount),0);
   const nextTotalOut=nextTotalCards+nextTotalTransfer+nextTotalRecurring;
-  const nextIncome=myClients.reduce((s,c)=>s+num(c.amount),0);
+  const nextMonthClients = currentUser.id==="lucia"
+    ? (months[nextKey]?.clients_lucia || clientsL)
+    : (months[nextKey]?.clients_tomas || clientsT);
+  const nextIncome=nextMonthClients.filter(c=>c.active!==false).reduce((s,c)=>s+num(c.amount),0);
   const nextResult=nextIncome-nextTotalOut;
 
   const totalRecurring=recurring.filter(r=>r.active).reduce((s,r)=>s+num(r.amount),0);
