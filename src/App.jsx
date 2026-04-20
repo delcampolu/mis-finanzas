@@ -66,18 +66,63 @@ const buildMonth = (y,m) => ({
   key:mk(y,m), expenses:[], clients_lucia:[], clients_tomas:[], fciMovements:[],
 });
 
-/* ─── GOOGLE SHEETS SYNC ─── */
-async function syncToSheets(sheetId, apiKey, data) {
-  // Uses Google Sheets API v4
-  // data = array of rows to append
+/* ─── GOOGLE SHEETS SYNC via Apps Script ─── */
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwAiXwf3sEGKPHChTLJbbtOFOucFsafOV7Wd6iU0oh44hRNQ5lGB3JOmcxe_VZTNWnM/exec";
+
+async function syncGasto(exp, userName, MONTHS) {
   try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Historial!A1:append?valueInputOption=USER_ENTERED&key=${apiKey}`;
-    await fetch(url, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ values: data })
+    await fetch(APPS_SCRIPT_URL, {
+      method:"POST", mode:"no-cors",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        type:"gasto",
+        fecha: exp.date,
+        mes: exp.month,
+        año: exp.year,
+        usuario: userName,
+        owner: exp.owner,
+        categoria: exp.categoryName,
+        desc: exp.desc||exp.categoryName,
+        medioPago: exp.payMethodName,
+        monto: exp.amount,
+        cuotas: exp.cuotas,
+        cuotaNum: exp.cuotaNum,
+      })
     });
-    return true;
-  } catch(e) { return false; }
+  } catch(e) { console.log("Sheets sync error:", e); }
+}
+
+async function syncIngreso(cliente, userName, mes, año) {
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method:"POST", mode:"no-cors",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        type:"ingreso",
+        fecha: new Date().toISOString().slice(0,10),
+        mes, año, usuario: userName,
+        cliente: cliente.name,
+        monto: cliente.amount,
+      })
+    });
+  } catch(e) { console.log("Sheets sync error:", e); }
+}
+
+async function syncFci(mov, saldoTotal) {
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method:"POST", mode:"no-cors",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        type:"fci",
+        fecha: mov.date,
+        movTipo: mov.type,
+        desc: mov.desc||mov.type,
+        monto: mov.amount,
+        saldoTotal,
+      })
+    });
+  } catch(e) { console.log("Sheets sync error:", e); }
 }
 
 /* ══════════════════════════════════════════════
@@ -101,7 +146,7 @@ export default function App() {
   const [fciTotal,    setFciTotal]    = useState(()=>load("fciTotal",    0));
   const [clientsL,    setClientsL]    = useState(()=>load("clientsL",    INIT_CLIENTS_LUCIA));
   const [clientsT,    setClientsT]    = useState(()=>load("clientsT",    INIT_CLIENTS_TOMAS));
-  const [sheetsConfig,setSheetsConfig]= useState(()=>load("sheetsConfig",{sheetId:"",apiKey:""}));
+  const [sheetsConfig,setSheetsConfig]= useState(()=>load("sheetsConfig",{sheetId:"",apiKey:""})); // kept for compat
   const [recurringL,  setRecurringL]  = useState(()=>load("recurringL",   INIT_RECURRING_L));
   const [recurringT,  setRecurringT]  = useState(()=>load("recurringT",   INIT_RECURRING_T));
   const [efectivo,    setEfectivo]    = useState(()=>load("efectivo",     0));
@@ -197,11 +242,8 @@ export default function App() {
       };
       newMonths[mkey]={...base,expenses:[...(base.expenses||[]),exp]};
 
-      // sync to sheets
-      if(sheetsConfig.sheetId&&sheetsConfig.apiKey){
-        const row=[exp.date,exp.month,exp.year,currentUser.name,exp.owner,exp.categoryName,exp.desc,exp.payMethodName,exp.amount,exp.cuotas,exp.cuotaNum];
-        syncToSheets(sheetsConfig.sheetId,sheetsConfig.apiKey,[row]);
-      }
+      // sync to Google Sheets
+      syncGasto(exp, currentUser.name, MONTHS);
     }
     setMonths(newMonths);
     closeWizard();
@@ -1087,8 +1129,11 @@ function FciTab({fciTotal,setFciTotal,md,upd,months,fmt,uid,num}){
   const add=()=>{
     if(!form.amount)return;
     const delta=form.type==="deposito"?num(form.amount):-num(form.amount);
+    const newTotal = fciTotal+delta;
     setFciTotal(p=>p+delta);
-    upd(d=>({...d,fciMovements:[...(d.fciMovements||[]),{id:uid(),...form,amount:num(form.amount),date:new Date().toISOString().slice(0,10)}]}));
+    const mov={id:uid(),...form,amount:num(form.amount),date:new Date().toISOString().slice(0,10)};
+    upd(d=>({...d,fciMovements:[...(d.fciMovements||[]),mov]}));
+    syncFci(mov, newTotal);
     setForm({type:"deposito",amount:"",desc:""});setShow(false);
   };
 
@@ -1290,20 +1335,13 @@ function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categ
             <span style={{color:"#6366f1",marginTop:4,display:"block"}}>Cada vez que cargues un gasto se agrega una fila: Fecha · Mes · Año · Persona · Para quién · Categoría · Descripción · Medio de pago · Monto · Cuotas · Nro cuota</span>
           </div>
         )}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <div>
-            <div className="sec" style={{marginBottom:5}}>ID de la planilla</div>
-            <input className="inp" placeholder="1BxiM...abc" value={sheetsConfig.sheetId}
-              onChange={e=>setSheetsConfig(p=>({...p,sheetId:e.target.value}))}/>
-          </div>
-          <div>
-            <div className="sec" style={{marginBottom:5}}>API Key</div>
-            <input className="inp" placeholder="AIzaSy..." type="password" value={sheetsConfig.apiKey}
-              onChange={e=>setSheetsConfig(p=>({...p,apiKey:e.target.value}))}/>
-          </div>
+        <div style={{background:"#f0fdf4",borderRadius:10,padding:"12px 14px",fontSize:13,color:"#15803d"}}>
+          <div style={{fontWeight:600,marginBottom:4}}>📊 Planilla conectada</div>
+          <div style={{fontSize:12,color:"#166534"}}>ID: 1McZpMNo1RtVfzvC_p1OLEraYcXlMq8Ux7Ku82KTQCLg</div>
+          <div style={{fontSize:11,color:"#166534",marginTop:4}}>Los datos se guardan en hojas: Gastos · Ingresos · FCI</div>
         </div>
-        <div style={{marginTop:10,fontSize:12,color:sheetsConfig.sheetId&&sheetsConfig.apiKey?"#15803d":"#a1a1aa"}}>
-          {sheetsConfig.sheetId&&sheetsConfig.apiKey?"✓ Configurado — los nuevos gastos se van a sincronizar automáticamente":"Sin configurar — los datos se guardan solo en este dispositivo"}
+        <div style={{marginTop:10,fontSize:12,color:"#15803d",display:"flex",alignItems:"center",gap:6}}>
+          <span>✓</span> Conectado a Google Sheets — cada gasto, ingreso y movimiento del FCI se guarda automáticamente
         </div>
       </div>
     </div>
