@@ -475,6 +475,7 @@ export default function App() {
               currentUser={currentUser} uid={uid}
               setMonths={setMonths} months={months}
               setRecurringL={setRecurringL} setRecurringT={setRecurringT}
+              recurringL={recurringL} recurringT={recurringT}
             />
           )}
 
@@ -1204,7 +1205,7 @@ function FciTab({fciTotal,setFciTotal,md,upd,months,fmt,uid,num}){
 /* ══════════════════════════════════════════════
    CONFIG TAB
 ══════════════════════════════════════════════ */
-function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categories,setCategories,clientsL,setClientsL,clientsT,setClientsT,sheetsConfig,setSheetsConfig,currentUser,uid,setMonths,months,setRecurringL,setRecurringT}){
+function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categories,setCategories,clientsL,setClientsL,clientsT,setClientsT,sheetsConfig,setSheetsConfig,currentUser,uid,setMonths,months,setRecurringL,setRecurringT,recurringL,recurringT}){
   const [newCard,    setNewCard]   =useState({name:"",color:"#6366f1",owner:currentUser.id});
   const [newPay,     setNewPay]    =useState({name:"",icon:"💳"});
   const [newCat,     setNewCat]    =useState({name:"",icon:"📦"});
@@ -1375,6 +1376,60 @@ function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categ
               <input className="inp mono" type="number" placeholder="Monto" value={newClientT.amount}
                 onChange={e=>setNewClientT(p=>({...p,amount:e.target.value}))} style={{width:100}}/>
               <button className="btn btn-dark" style={{padding:"8px 12px"}} onClick={addClientTemplate}>+</button>
+            </div>
+          )}
+        </div>
+
+        {/* GASTOS FIJOS TEMPLATE */}
+        <div className="card" style={{padding:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <span className="sec">Gastos fijos recurrentes</span>
+            <button className="btn btn-dark" style={{fontSize:12,padding:"6px 11px"}} onClick={()=>setShowNFT(f=>!f)}>+ Nuevo</button>
+          </div>
+          <p style={{fontSize:11,color:"#a1a1aa",marginBottom:10}}>Obra social, monotributo, gym, etc. Se pre-cargan cada mes y podés editar el monto desde Mi resumen.</p>
+          {(currentUser.id==="lucia" ? recurringL : recurringT).map(r=>(
+            <div key={r.id} className="row">
+              <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
+                <input type="checkbox" className="check" checked={r.active!==false}
+                  onChange={()=>{
+                    if(currentUser.id==="lucia") setRecurringL(p=>p.map(x=>x.id===r.id?{...x,active:!x.active}:x));
+                    else setRecurringT(p=>p.map(x=>x.id===r.id?{...x,active:!x.active}:x));
+                  }}/>
+                <input className="inp" value={r.name}
+                  onChange={e=>{
+                    if(currentUser.id==="lucia") setRecurringL(p=>p.map(x=>x.id===r.id?{...x,name:e.target.value}:x));
+                    else setRecurringT(p=>p.map(x=>x.id===r.id?{...x,name:e.target.value}:x));
+                  }}
+                  style={{border:"none",background:"transparent",fontWeight:500,fontSize:13,padding:"2px 0"}}/>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <input className="inp mono" type="number" value={r.amount}
+                  onChange={e=>{
+                    if(currentUser.id==="lucia") setRecurringL(p=>p.map(x=>x.id===r.id?{...x,amount:+e.target.value}:x));
+                    else setRecurringT(p=>p.map(x=>x.id===r.id?{...x,amount:+e.target.value}:x));
+                  }}
+                  style={{width:105,textAlign:"right",fontSize:13}}/>
+                <button className="btn btn-red" style={{padding:"4px 7px",fontSize:11}}
+                  onClick={()=>{
+                    if(currentUser.id==="lucia") setRecurringL(p=>p.filter(x=>x.id!==r.id));
+                    else setRecurringT(p=>p.filter(x=>x.id!==r.id));
+                  }}>✕</button>
+              </div>
+            </div>
+          ))}
+          {showNFT&&(
+            <div style={{marginTop:10,display:"flex",gap:7}}>
+              <input className="inp" placeholder="Nombre (ej: Obra Social)" value={newFixedT.name}
+                onChange={e=>setNewFixedT(p=>({...p,name:e.target.value}))}/>
+              <input className="inp mono" type="number" placeholder="Monto" value={newFixedT.amount}
+                onChange={e=>setNewFixedT(p=>({...p,amount:e.target.value}))} style={{width:100}}/>
+              <button className="btn btn-dark" style={{padding:"8px 12px"}} onClick={()=>{
+                if(!newFixedT.name) return;
+                const newR={id:uid(),name:newFixedT.name,amount:parseFloat(newFixedT.amount)||0,active:true,userId:currentUser.id};
+                if(currentUser.id==="lucia") setRecurringL(p=>[...p,newR]);
+                else setRecurringT(p=>[...p,newR]);
+                setNewFixedT({name:"",amount:""});setShowNFT(false);
+              }}>+</button>
             </div>
           )}
         </div>
