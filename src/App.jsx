@@ -473,6 +473,8 @@ export default function App() {
               clientsT={clientsT} setClientsT={setClientsT}
               sheetsConfig={sheetsConfig} setSheetsConfig={setSheetsConfig}
               currentUser={currentUser} uid={uid}
+              setMonths={setMonths} months={months}
+              setRecurringL={setRecurringL} setRecurringT={setRecurringT}
             />
           )}
 
@@ -1202,14 +1204,41 @@ function FciTab({fciTotal,setFciTotal,md,upd,months,fmt,uid,num}){
 /* ══════════════════════════════════════════════
    CONFIG TAB
 ══════════════════════════════════════════════ */
-function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categories,setCategories,clientsL,setClientsL,clientsT,setClientsT,sheetsConfig,setSheetsConfig,currentUser,uid}){
+function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categories,setCategories,clientsL,setClientsL,clientsT,setClientsT,sheetsConfig,setSheetsConfig,currentUser,uid,setMonths,months,setRecurringL,setRecurringT}){
   const [newCard,    setNewCard]   =useState({name:"",color:"#6366f1",owner:currentUser.id});
   const [newPay,     setNewPay]    =useState({name:"",icon:"💳"});
   const [newCat,     setNewCat]    =useState({name:"",icon:"📦"});
+  const [newClientT, setNewClientT]=useState({name:"",amount:""});
+  const [newFixedT,  setNewFixedT] =useState({name:"",amount:""});
   const [showNC,setShowNC]=useState(false);
   const [showNP,setShowNP]=useState(false);
   const [showNCA,setShowNCA]=useState(false);
+  const [showNCT,setShowNCT]=useState(false);
+  const [showNFT,setShowNFT]=useState(false);
   const [sheetsHelp,setSheetsHelp]=useState(false);
+
+  const myClientTpls = currentUser.id==="lucia" ? clientsL : clientsT;
+  const setMyClientTpls = currentUser.id==="lucia" ? setClientsL : setClientsT;
+
+  const addClientTemplate = () => {
+    if(!newClientT.name) return;
+    const newC={id:uid(),name:newClientT.name,amount:parseFloat(newClientT.amount)||0,active:true,paid:false};
+    setMyClientTpls(p=>[...p,newC]);
+    // Propagate to current and future months
+    const field = currentUser.id==="lucia" ? "clients_lucia" : "clients_tomas";
+    const now = new Date();
+    setMonths(prev=>{
+      const upd={...prev};
+      Object.keys(upd).forEach(k=>{
+        const [y,m]=k.split("-").map(Number);
+        if(new Date(y,m-1,1)>=new Date(now.getFullYear(),now.getMonth(),1)){
+          upd[k]={...upd[k],[field]:[...(upd[k][field]||[]),{...newC,id:uid()}]};
+        }
+      });
+      return upd;
+    });
+    setNewClientT({name:"",amount:""});setShowNCT(false);
+  };
 
   return (
     <div>
@@ -1310,6 +1339,42 @@ function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categ
                 setCategories(p=>[...p,{id:uid(),...newCat}]);
                 setNewCat({name:"",icon:"📦"});setShowNCA(false);
               }}>+</button>
+            </div>
+          )}
+        </div>
+
+        {/* CLIENTES TEMPLATE */}
+        <div className="card" style={{padding:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <span className="sec">Clientes / ingresos recurrentes</span>
+            <button className="btn btn-dark" style={{fontSize:12,padding:"6px 11px"}} onClick={()=>setShowNCT(f=>!f)}>+ Nuevo</button>
+          </div>
+          <p style={{fontSize:11,color:"#a1a1aa",marginBottom:10}}>Se pre-cargan en cada mes nuevo. Al agregar uno nuevo se suma a los meses actuales y futuros.</p>
+          {myClientTpls.map(c=>(
+            <div key={c.id} className="row">
+              <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
+                <input type="checkbox" className="check" checked={c.active!==false}
+                  onChange={()=>setMyClientTpls(p=>p.map(x=>x.id===c.id?{...x,active:!x.active}:x))}/>
+                <input className="inp" value={c.name}
+                  onChange={e=>setMyClientTpls(p=>p.map(x=>x.id===c.id?{...x,name:e.target.value}:x))}
+                  style={{border:"none",background:"transparent",fontWeight:500,fontSize:13,padding:"2px 0"}}/>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <input className="inp mono" type="number" value={c.amount}
+                  onChange={e=>setMyClientTpls(p=>p.map(x=>x.id===c.id?{...x,amount:+e.target.value}:x))}
+                  style={{width:105,textAlign:"right",fontSize:13}}/>
+                <button className="btn btn-red" style={{padding:"4px 7px",fontSize:11}}
+                  onClick={()=>setMyClientTpls(p=>p.filter(x=>x.id!==c.id))}>✕</button>
+              </div>
+            </div>
+          ))}
+          {showNCT&&(
+            <div style={{marginTop:10,display:"flex",gap:7}}>
+              <input className="inp" placeholder="Nombre cliente" value={newClientT.name}
+                onChange={e=>setNewClientT(p=>({...p,name:e.target.value}))}/>
+              <input className="inp mono" type="number" placeholder="Monto" value={newClientT.amount}
+                onChange={e=>setNewClientT(p=>({...p,amount:e.target.value}))} style={{width:100}}/>
+              <button className="btn btn-dark" style={{padding:"8px 12px"}} onClick={addClientTemplate}>+</button>
             </div>
           )}
         </div>
