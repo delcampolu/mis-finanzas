@@ -135,6 +135,8 @@ export default function App() {
   const [sY,          setSY]          = useState(CY);
   const [sM,          setSM]          = useState(CM);
   const [sideOpen,    setSideOpen]    = useState(false);
+  const [undoStack,   setUndoStack]   = useState([]);
+  const [redoStack,   setRedoStack]   = useState([]);
 
   const [users,       setUsers]       = useState(()=>load("users",       INIT_USERS));
   const [cards,       setCards]       = useState(()=>load("cards",       INIT_CARDS));
@@ -346,9 +348,13 @@ export default function App() {
 
       <div className="topbar">
         <div style={{fontSize:14,fontWeight:600}}>{MONTHS[sM]} {sY}</div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <button onClick={undo} disabled={undoStack.length===0} title="Deshacer"
+            style={{background:"none",border:"1px solid #e4e4e7",borderRadius:8,padding:"5px 9px",cursor:undoStack.length===0?"not-allowed":"pointer",color:undoStack.length===0?"#d4d4d8":"#18181b",fontSize:14}}>↩</button>
+          <button onClick={redo} disabled={redoStack.length===0} title="Rehacer"
+            style={{background:"none",border:"1px solid #e4e4e7",borderRadius:8,padding:"5px 9px",cursor:redoStack.length===0?"not-allowed":"pointer",color:redoStack.length===0?"#d4d4d8":"#18181b",fontSize:14}}>↪</button>
           <div style={{width:28,height:28,borderRadius:"50%",background:currentUser.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,color:"#fff"}}>{currentUser.initials}</div>
-          <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setCurrentUser(null);setPinInput("");}}>Salir</button>
+          <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setCurrentUser(null);}}>Salir</button>
         </div>
       </div>
 
@@ -368,7 +374,13 @@ export default function App() {
             </button>
           ))}
           <div style={{marginTop:"auto",paddingTop:18,display:"flex",flexDirection:"column",gap:7}}>
-            <div className="sec" style={{paddingLeft:4}}>Período</div>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+            <button onClick={undo} disabled={undoStack.length===0} title="Deshacer"
+              style={{flex:1,background:"none",border:"1px solid #e4e4e7",borderRadius:8,padding:"7px",cursor:undoStack.length===0?"not-allowed":"pointer",color:undoStack.length===0?"#d4d4d8":"#18181b",fontSize:13}}>↩ Deshacer</button>
+            <button onClick={redo} disabled={redoStack.length===0} title="Rehacer"
+              style={{flex:1,background:"none",border:"1px solid #e4e4e7",borderRadius:8,padding:"7px",cursor:redoStack.length===0?"not-allowed":"pointer",color:redoStack.length===0?"#d4d4d8":"#18181b",fontSize:13}}>↪ Rehacer</button>
+          </div>
+          <div className="sec" style={{paddingLeft:4}}>Período</div>
             <select className="inp" value={sM} onChange={e=>setSM(+e.target.value)}>
               {MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}
             </select>
@@ -1623,47 +1635,42 @@ function DashboardTab({users,months,cards,categories,fmt,num,MONTHS,CY,mk,client
   const lu=users.find(u=>u.id==="lucia");
   const to=users.find(u=>u.id==="tomas");
 
-  // Build last 12 months data
+  // Build ALL months with data (not just last 12)
   const today=new Date();
   const curM=today.getMonth(); const curY=today.getFullYear();
-  const monthRows = Array.from({length:12},(_,i)=>{
-    let mo=curM-11+i, yr=curY;
-    if(mo<0){mo+=12;yr--;}
-    const d=months[mk(yr,mo)];
+
+  // Get all month keys sorted
+  const allMonthKeys = Object.keys(months).sort();
+  const monthRows = allMonthKeys.map(key=>{
+    const [yr,mo_1]=key.split("-").map(Number);
+    const mo=mo_1-1;
+    const d=months[key];
     const exps=d?.expenses||[];
     const luciaExp=exps.filter(e=>e.userId==="lucia").reduce((s,e)=>s+num(e.amount),0);
     const tomasExp=exps.filter(e=>e.userId==="tomas").reduce((s,e)=>s+num(e.amount),0);
-    const luciaInc=(d?.clients_lucia||clientsL).filter(c=>c.active).reduce((s,c)=>s+num(c.amount),0);
-    const tomasInc=(d?.clients_tomas||clientsT).filter(c=>c.active).reduce((s,c)=>s+num(c.amount),0);
-    // by category
+    if(luciaExp===0&&tomasExp===0) return null;
     const byCat={};
     exps.forEach(e=>{ byCat[e.categoryName]=(byCat[e.categoryName]||0)+num(e.amount); });
-    return { label:`${MONTHS[mo].slice(0,3)} ${yr}`, mo, yr, luciaExp, tomasExp, luciaInc, tomasInc, total:luciaExp+tomasExp, byCat };
-  });
+    return { label:`${MONTHS[mo].slice(0,3)} ${yr}`, mo, yr, luciaExp, tomasExp, total:luciaExp+tomasExp, byCat };
+  }).filter(Boolean);
 
-  // All categories seen
-  const allCats=[...new Set(monthRows.flatMap(r=>Object.keys(r.byCat)))].slice(0,8);
-
-  // Acumulados
+  // Acumulados solo gastos
   const totalLuciaExp=monthRows.reduce((s,r)=>s+r.luciaExp,0);
   const totalTomasExp=monthRows.reduce((s,r)=>s+r.tomasExp,0);
-  const totalLuciaInc=monthRows.reduce((s,r)=>s+r.luciaInc,0);
-  const totalTomasInc=monthRows.reduce((s,r)=>s+r.tomasInc,0);
 
   const COLORS=["#18181b","#6366f1","#0ea5e9","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899"];
 
   return (
     <div>
-      <h1 style={{fontSize:20,fontWeight:600,marginBottom:6}}>Dashboard anual</h1>
-      <p style={{fontSize:13,color:"#71717a",marginBottom:20}}>Últimos 12 meses — acumulado</p>
+      <h1 style={{fontSize:20,fontWeight:600,marginBottom:6}}>Dashboard de gastos</h1>
+      <p style={{fontSize:13,color:"#71717a",marginBottom:20}}>Historial completo — todos los meses cargados</p>
 
-      {/* Totales acumulados */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:20}}>
+      {/* Totales acumulados solo gastos */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
         {[
-          {l:`Gastos ${lu?.name}`,  v:totalLuciaExp, c:"#dc2626"},
+          {l:`Gastos ${lu?.name}`,  v:totalLuciaExp, c:"#6366f1"},
           {l:`Gastos ${to?.name}`,  v:totalTomasExp, c:"#ec4899"},
-          {l:`Ingresos ${lu?.name}`,v:totalLuciaInc, c:"#15803d"},
-          {l:`Ingresos ${to?.name}`,v:totalTomasInc, c:"#0ea5e9"},
+          {l:"Total conjunto",      v:totalLuciaExp+totalTomasExp, c:"#dc2626"},
         ].map(s=>(
           <div key={s.l} className="card" style={{padding:14,borderLeft:`3px solid ${s.c}`}}>
             <div style={{fontSize:11,color:"#71717a",marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>{s.l}</div>
@@ -1672,22 +1679,20 @@ function DashboardTab({users,months,cards,categories,fmt,num,MONTHS,CY,mk,client
         ))}
       </div>
 
-      {/* Gráfica tendencia */}
+      {/* Gráfica solo gastos */}
       <div className="card" style={{padding:20,marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Gastos vs ingresos — últimos 12 meses</div>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Gastos por mes — {lu?.name} y {to?.name}</div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={monthRows} margin={{left:0}}>
-            <XAxis dataKey="label" tick={{fontSize:10}} interval={1}/>
+            <XAxis dataKey="label" tick={{fontSize:10}} interval={0} angle={-35} textAnchor="end" height={45}/>
             <YAxis tickFormatter={v=>`$${(v/1000).toFixed(0)}k`} tick={{fontSize:10}}/>
             <Tooltip formatter={v=>fmt(v)}/>
-            <Bar dataKey="luciaInc"  name={`Ing. ${lu?.name}`}  fill="#10b981" stackId="inc"/>
-            <Bar dataKey="tomasInc"  name={`Ing. ${to?.name}`}  fill="#0ea5e9" stackId="inc"/>
-            <Bar dataKey="luciaExp"  name={`Gto. ${lu?.name}`}  fill="#6366f1" stackId="exp"/>
-            <Bar dataKey="tomasExp"  name={`Gto. ${to?.name}`}  fill="#ec4899" stackId="exp"/>
+            <Bar dataKey="luciaExp" name={`${lu?.name}`} fill="#6366f1" stackId="a"/>
+            <Bar dataKey="tomasExp" name={`${to?.name}`} fill="#ec4899" stackId="a"/>
           </BarChart>
         </ResponsiveContainer>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:8}}>
-          {[{l:`Ing. ${lu?.name}`,c:"#10b981"},{l:`Ing. ${to?.name}`,c:"#0ea5e9"},{l:`Gto. ${lu?.name}`,c:"#6366f1"},{l:`Gto. ${to?.name}`,c:"#ec4899"}].map(s=>(
+          {[{l:lu?.name,c:"#6366f1"},{l:to?.name,c:"#ec4899"}].map(s=>(
             <div key={s.l} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
               <div style={{width:10,height:10,borderRadius:3,background:s.c}}/>{s.l}
             </div>
@@ -1695,7 +1700,7 @@ function DashboardTab({users,months,cards,categories,fmt,num,MONTHS,CY,mk,client
         </div>
       </div>
 
-      {/* Tabla por mes */}
+      {/* Tabla por mes — solo gastos */}
       <div className="card" style={{padding:0,overflow:"hidden",marginBottom:16}}>
         <div style={{padding:"14px 18px",borderBottom:"1px solid #f4f4f5",fontWeight:600,fontSize:14}}>Tabla mensual detallada</div>
         <div style={{overflowX:"auto"}}>
@@ -1703,39 +1708,27 @@ function DashboardTab({users,months,cards,categories,fmt,num,MONTHS,CY,mk,client
             <thead>
               <tr style={{background:"#fafafa"}}>
                 <th style={{padding:"10px 14px",textAlign:"left",fontWeight:600,color:"#52525b",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>Mes</th>
-                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#15803d",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>Ing. {lu?.name}</th>
-                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#0ea5e9",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>Ing. {to?.name}</th>
-                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#6366f1",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>Gto. {lu?.name}</th>
-                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#ec4899",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>Gto. {to?.name}</th>
-                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#18181b",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>Total gtos</th>
-                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#18181b",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>Resultado</th>
+                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#6366f1",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>{lu?.name}</th>
+                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#ec4899",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>{to?.name}</th>
+                <th style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:"#dc2626",borderBottom:"1px solid #e4e4e7",whiteSpace:"nowrap"}}>Total</th>
               </tr>
             </thead>
             <tbody>
-              {monthRows.map((r,i)=>{
-                const res=(r.luciaInc+r.tomasInc)-(r.luciaExp+r.tomasExp);
-                return (
-                  <tr key={r.label} style={{borderBottom:"1px solid #f4f4f5",background:i%2===0?"#fff":"#fafafa"}}>
-                    <td style={{padding:"9px 14px",fontWeight:500,whiteSpace:"nowrap"}}>{r.label}</td>
-                    <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#15803d"}}>{r.luciaInc>0?fmt(r.luciaInc):"—"}</td>
-                    <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#0ea5e9"}}>{r.tomasInc>0?fmt(r.tomasInc):"—"}</td>
-                    <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#6366f1"}}>{r.luciaExp>0?fmt(r.luciaExp):"—"}</td>
-                    <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#ec4899"}}>{r.tomasExp>0?fmt(r.tomasExp):"—"}</td>
-                    <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#dc2626",fontWeight:500}}>{r.total>0?fmt(r.total):"—"}</td>
-                    <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",fontWeight:600,color:res>=0?"#15803d":"#dc2626"}}>{(r.luciaInc+r.tomasInc)>0||r.total>0?fmt(res):"—"}</td>
-                  </tr>
-                );
-              })}
+              {monthRows.map((r,i)=>(
+                <tr key={r.label} style={{borderBottom:"1px solid #f4f4f5",background:i%2===0?"#fff":"#fafafa"}}>
+                  <td style={{padding:"9px 14px",fontWeight:500,whiteSpace:"nowrap"}}>{r.label}</td>
+                  <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#6366f1"}}>{r.luciaExp>0?fmt(r.luciaExp):"—"}</td>
+                  <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#ec4899"}}>{r.tomasExp>0?fmt(r.tomasExp):"—"}</td>
+                  <td style={{padding:"9px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#dc2626",fontWeight:600}}>{r.total>0?fmt(r.total):"—"}</td>
+                </tr>
+              ))}
             </tbody>
             <tfoot>
               <tr style={{background:"#f4f4f5",fontWeight:700}}>
                 <td style={{padding:"10px 14px"}}>TOTAL</td>
-                <td style={{padding:"10px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#15803d"}}>{fmt(totalLuciaInc)}</td>
-                <td style={{padding:"10px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#0ea5e9"}}>{fmt(totalTomasInc)}</td>
                 <td style={{padding:"10px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#6366f1"}}>{fmt(totalLuciaExp)}</td>
                 <td style={{padding:"10px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#ec4899"}}>{fmt(totalTomasExp)}</td>
                 <td style={{padding:"10px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:"#dc2626"}}>{fmt(totalLuciaExp+totalTomasExp)}</td>
-                <td style={{padding:"10px 14px",textAlign:"right",fontFamily:"'DM Mono',monospace",color:(totalLuciaInc+totalTomasInc-totalLuciaExp-totalTomasExp)>=0?"#15803d":"#dc2626"}}>{fmt(totalLuciaInc+totalTomasInc-totalLuciaExp-totalTomasExp)}</td>
               </tr>
             </tfoot>
           </table>
