@@ -71,62 +71,56 @@ const buildMonth = (y,m,cL,cT) => ({
 });
 
 /* ─── GOOGLE SHEETS SYNC via Apps Script ─── */
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwAiXwf3sEGKPHChTLJbbtOFOucFsafOV7Wd6iU0oh44hRNQ5lGB3JOmcxe_VZTNWnM/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyRQ376LnBS15sGrOpzWHDByB_Ww9RLVnf6BhLjGVXaY7vm_UcseW_1fDm9I0JK6Wh/exec";
 
-async function syncGasto(exp, userName, MONTHS) {
+async function postToSheets(payload) {
   try {
+    // Use text/plain to avoid CORS preflight with Apps Script
     await fetch(APPS_SCRIPT_URL, {
-      method:"POST", mode:"no-cors",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        type:"gasto",
-        fecha: exp.date,
-        mes: exp.month,
-        año: exp.year,
-        usuario: userName,
-        owner: exp.owner,
-        categoria: exp.categoryName,
-        desc: exp.desc||exp.categoryName,
-        medioPago: exp.payMethodName,
-        monto: exp.amount,
-        cuotas: exp.cuotas,
-        cuotaNum: exp.cuotaNum,
-      })
+      method:"POST",
+      mode:"no-cors",
+      headers:{"Content-Type":"text/plain"},
+      body: JSON.stringify(payload)
     });
   } catch(e) { console.log("Sheets sync error:", e); }
+}
+
+async function syncGasto(exp, userName, MONTHS) {
+  postToSheets({
+    type:"gasto",
+    fecha: exp.date,
+    mes: exp.month,
+    año: exp.year,
+    usuario: userName,
+    owner: exp.owner,
+    categoria: exp.categoryName,
+    desc: exp.desc||exp.categoryName,
+    medioPago: exp.payMethodName,
+    monto: exp.amount,
+    cuotas: exp.cuotas,
+    cuotaNum: exp.cuotaNum,
+  });
 }
 
 async function syncIngreso(cliente, userName, mes, año) {
-  try {
-    await fetch(APPS_SCRIPT_URL, {
-      method:"POST", mode:"no-cors",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        type:"ingreso",
-        fecha: new Date().toISOString().slice(0,10),
-        mes, año, usuario: userName,
-        cliente: cliente.name,
-        monto: cliente.amount,
-      })
-    });
-  } catch(e) { console.log("Sheets sync error:", e); }
+  postToSheets({
+    type:"ingreso",
+    fecha: new Date().toISOString().slice(0,10),
+    mes, año, usuario: userName,
+    cliente: cliente.name,
+    monto: cliente.amount,
+  });
 }
 
 async function syncFci(mov, saldoTotal) {
-  try {
-    await fetch(APPS_SCRIPT_URL, {
-      method:"POST", mode:"no-cors",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        type:"fci",
-        fecha: mov.date,
-        movTipo: mov.type,
-        desc: mov.desc||mov.type,
-        monto: mov.amount,
-        saldoTotal,
-      })
-    });
-  } catch(e) { console.log("Sheets sync error:", e); }
+  postToSheets({
+    type:"fci",
+    fecha: mov.date,
+    movTipo: mov.type,
+    desc: mov.desc||mov.type,
+    monto: mov.amount,
+    saldoTotal,
+  });
 }
 
 /* ══════════════════════════════════════════════
@@ -263,10 +257,7 @@ export default function App() {
 
   /* ── LOGIN SCREEN ── */
   if(!currentUser) return (
-    <LoginScreen users={users} onLogin={(u,pin)=>{
-      if(u.pin===pin){setCurrentUser(u);setPinError(false);setPinInput("");}
-      else{setPinError(true);}
-    }} pinInput={pinInput} setPinInput={setPinInput} pinError={pinError}/>
+    <LoginScreen users={users} onLogin={(u)=>{setCurrentUser(u);}}/>
   );
 
   const TABS=[
@@ -501,43 +492,24 @@ export default function App() {
 /* ══════════════════════════════════════════════
    LOGIN
 ══════════════════════════════════════════════ */
-function LoginScreen({users,onLogin,pinInput,setPinInput,pinError}){
-  const [selUser,setSelUser]=useState(null);
+function LoginScreen({users,onLogin}){
   return (
     <div style={{minHeight:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8f8f6",fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
       <div style={{width:"100%",maxWidth:360,padding:"0 24px"}}>
         <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{fontSize:24,fontWeight:600}}>Mis finanzas</div>
-          <div style={{fontSize:14,color:"#71717a",marginTop:4}}>¿Quién sos?</div>
+          <div style={{fontSize:28,fontWeight:600}}>Mis finanzas</div>
+          <div style={{fontSize:14,color:"#71717a",marginTop:6}}>¿Quién sos?</div>
         </div>
-        {!selUser ? (
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {users.map(u=>(
-              <button key={u.id} onClick={()=>setSelUser(u)} style={{background:"#fff",border:"1px solid #e4e4e7",borderRadius:14,padding:"16px 20px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor=u.color}
-                onMouseLeave={e=>e.currentTarget.style.borderColor="#e4e4e7"}>
-                <div style={{width:44,height:44,borderRadius:"50%",background:u.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:600,color:"#fff"}}>{u.initials}</div>
-                <span style={{fontSize:16,fontWeight:500,color:"#18181b"}}>{u.name}</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="card" style={{padding:24}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-              <button onClick={()=>{setSelUser(null);setPinInput("");}} style={{background:"none",border:"none",cursor:"pointer",color:"#a1a1aa",fontSize:18}}>←</button>
-              <div style={{width:36,height:36,borderRadius:"50%",background:selUser.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:600,color:"#fff"}}>{selUser.initials}</div>
-              <span style={{fontSize:15,fontWeight:500}}>{selUser.name}</span>
-            </div>
-            <div style={{fontSize:13,color:"#71717a",marginBottom:10}}>Ingresá tu PIN</div>
-            <input className="inp" type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pinInput}
-              onChange={e=>setPinInput(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&onLogin(selUser,pinInput)}
-              style={{fontSize:20,textAlign:"center",letterSpacing:8,marginBottom:pinError?8:12}}
-              autoFocus/>
-            {pinError && <div style={{fontSize:12,color:"#dc2626",marginBottom:10,textAlign:"center"}}>PIN incorrecto</div>}
-            <button className="btn btn-dark" style={{width:"100%"}} onClick={()=>onLogin(selUser,pinInput)}>Entrar</button>
-          </div>
-        )}
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {users.map(u=>(
+            <button key={u.id} onClick={()=>onLogin(u)} style={{background:"#fff",border:"1px solid #e4e4e7",borderRadius:16,padding:"18px 22px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",fontFamily:"inherit",transition:"all .15s",textAlign:"left"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=u.color;e.currentTarget.style.background=u.color+"10";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="#e4e4e7";e.currentTarget.style.background="#fff";}}>
+              <div style={{width:48,height:48,borderRadius:"50%",background:u.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:600,color:"#fff",flexShrink:0}}>{u.initials}</div>
+              <span style={{fontSize:17,fontWeight:500,color:"#18181b"}}>{u.name}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -568,7 +540,7 @@ function ExpenseWizard({wizard,setWizard,categories,cards,payMethods,sM,sY,MONTH
   const back = () => { if(step>1) setWizard(w=>({...w,step:w.step-1})); else onClose(); };
 
   return (
-    <div className="wizard-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="wizard-overlay">
       <div className="wizard-sheet">
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
