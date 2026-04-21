@@ -912,49 +912,89 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
         </button>
       </div>
 
-      {/* TARJETAS RESUMEN */}
+      {/* TARJETAS Y FIJOS — PAGOS */}
       <div className="card" style={{padding:18,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
-          <span className="sec">Resumen por tarjeta</span>
-          <span className="mono" style={{fontSize:12,color:"#dc2626"}}>{fmt(totalCards)}</span>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+          <span className="sec">Pagos pendientes</span>
+          <span className="mono" style={{fontSize:12,color:"#dc2626"}}>{fmt(
+            cards.filter(c=>c.owner===currentUser.id).reduce((s,c)=>s+num(md.cardPayments?.[c.id]??cardTotals[c.id]??0),0)
+            + (md.fixedPayments ? md.fixedExpenses?.reduce((s,f)=>s+num(md.fixedPayments[f.id]??f.amount),0) : totalRecurring)
+          )}</span>
         </div>
-        <div className="g2">
-          {cards.filter(c=>c.owner===currentUser.id).map(c=>{
-            const total=cardTotals[c.id]||0;
-            if(total===0) return null;
-            return (
-              <div key={c.id} style={{background:"#fafafa",borderRadius:12,padding:"12px 14px",borderLeft:`3px solid ${c.color}`}}>
-                <div style={{fontSize:12,color:"#71717a",marginBottom:4}}>{c.name}</div>
-                <div className="mono" style={{fontSize:17,fontWeight:500,color:"#dc2626"}}>{fmt(total)}</div>
-              </div>
-            );
-          })}
-          {Object.keys(cardTotals).length===0&&<div style={{fontSize:13,color:"#a1a1aa",gridColumn:"1/-1"}}>Sin gastos con tarjeta este mes</div>}
-        </div>
-      </div>
+        <p style={{fontSize:11,color:"#a1a1aa",marginBottom:12}}>Editá el monto a 0 cuando pagás. El monto calculado viene de tus gastos cargados.</p>
 
-      {/* PAGOS FIJOS CARGADOS */}
-      {transferExp.length>0&&(
-        <div className="card" style={{padding:18,marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
-            <span className="sec">Pagos cargados (transf/efect)</span>
-            <span className="mono" style={{fontSize:12,color:"#dc2626"}}>{fmt(totalTransfer)}</span>
-          </div>
-          {transferExp.map(e=>(
-            <div key={e.id} className="row">
-              <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:500}}>{e.desc||e.categoryName}</div>
-                <div style={{fontSize:11,color:"#a1a1aa"}}>{e.payMethodName} · {e.categoryName}</div>
+        {/* Por tarjeta */}
+        {cards.filter(c=>c.owner===currentUser.id&&(cardTotals[c.id]||0)>0).map(c=>{
+          const pendiente = md.cardPayments?.[c.id] !== undefined ? md.cardPayments[c.id] : cardTotals[c.id];
+          const pagado = num(pendiente) === 0;
+          return (
+            <div key={c.id} className="row">
+              <div style={{display:"flex",alignItems:"center",gap:9,flex:1}}>
+                <input type="checkbox" className="check" checked={pagado}
+                  onChange={()=>upd(d=>({...d,cardPayments:{...(d.cardPayments||{}),
+                    [c.id]: pagado ? cardTotals[c.id] : 0
+                  }}))}/>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{width:8,height:8,borderRadius:2,background:c.color,display:"inline-block"}}/>
+                  <span style={{fontSize:13,fontWeight:500,color:pagado?"#a1a1aa":"#18181b",textDecoration:pagado?"line-through":"none"}}>{c.name}</span>
+                </div>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                <span className="mono" style={{fontSize:13}}>{fmt(e.amount)}</span>
-                <button className="btn btn-red" style={{padding:"4px 7px",fontSize:11}}
-                  onClick={()=>upd(d=>({...d,expenses:d.expenses.filter(x=>x.id!==e.id)}))}>✕</button>
-              </div>
+              <input className="inp mono" type="number"
+                value={pendiente}
+                onChange={e=>upd(d=>({...d,cardPayments:{...(d.cardPayments||{}),[c.id]:+e.target.value}}))}
+                style={{width:120,textAlign:"right",fontSize:13,color:pagado?"#a1a1aa":"#dc2626",textDecoration:pagado?"line-through":"none"}}/>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+
+        {/* Gastos fijos */}
+        {recurring.filter(r=>r.active).map(r=>{
+          const pendiente = md.fixedPayments?.[r.id] !== undefined ? md.fixedPayments[r.id] : r.amount;
+          const pagado = num(pendiente) === 0;
+          return (
+            <div key={r.id} className="row">
+              <div style={{display:"flex",alignItems:"center",gap:9,flex:1}}>
+                <input type="checkbox" className="check" checked={pagado}
+                  onChange={()=>upd(d=>({...d,fixedPayments:{...(d.fixedPayments||{}),
+                    [r.id]: pagado ? r.amount : 0
+                  }}))}/>
+                <span style={{fontSize:13,fontWeight:500,color:pagado?"#a1a1aa":"#18181b",textDecoration:pagado?"line-through":"none"}}>{r.name}</span>
+              </div>
+              <input className="inp mono" type="number"
+                value={pendiente}
+                onChange={e=>upd(d=>({...d,fixedPayments:{...(d.fixedPayments||{}),[r.id]:+e.target.value}}))}
+                style={{width:120,textAlign:"right",fontSize:13,color:pagado?"#a1a1aa":"#dc2626",textDecoration:pagado?"line-through":"none"}}/>
+            </div>
+          );
+        })}
+
+        {/* Pagos cargados con +gasto */}
+        {transferExp.map(e=>{
+          const pendiente = md.transferPayments?.[e.id] !== undefined ? md.transferPayments[e.id] : e.amount;
+          const pagado = num(pendiente) === 0;
+          return (
+            <div key={e.id} className="row">
+              <div style={{display:"flex",alignItems:"center",gap:9,flex:1}}>
+                <input type="checkbox" className="check" checked={pagado}
+                  onChange={()=>upd(d=>({...d,transferPayments:{...(d.transferPayments||{}),
+                    [e.id]: pagado ? e.amount : 0
+                  }}))}/>
+                <span style={{fontSize:13,fontWeight:500,color:pagado?"#a1a1aa":"#18181b",textDecoration:pagado?"line-through":"none"}}>{e.desc||e.categoryName}</span>
+              </div>
+              <input className="inp mono" type="number"
+                value={pendiente}
+                onChange={ev=>upd(d=>({...d,transferPayments:{...(d.transferPayments||{}),[e.id]:+ev.target.value}}))}
+                style={{width:120,textAlign:"right",fontSize:13,color:pagado?"#a1a1aa":"#dc2626",textDecoration:pagado?"line-through":"none"}}/>
+            </div>
+          );
+        })}
+
+        {cards.filter(c=>c.owner===currentUser.id&&(cardTotals[c.id]||0)>0).length===0&&
+         recurring.filter(r=>r.active).length===0&&
+         transferExp.length===0&&
+          <div style={{fontSize:13,color:"#a1a1aa"}}>Sin pagos pendientes este mes</div>
+        }
+      </div>
     </div>
   );
 }
