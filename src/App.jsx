@@ -173,7 +173,25 @@ export default function App() {
     });
   },[key]);
   const md  = months[key] || buildMonth(sY,sM,clientsL,clientsT);
-  const upd = fn => setMonths(prev=>({...prev,[key]:fn(prev[key]||buildMonth(sY,sM))}));
+  const upd = fn => {
+    setUndoStack(prev=>[...prev.slice(-19), months]);
+    setRedoStack([]);
+    setMonths(prev=>({...prev,[key]:fn(prev[key]||buildMonth(sY,sM,clientsL,clientsT))}));
+  };
+  const undo = () => {
+    if(undoStack.length===0) return;
+    setRedoStack(prev=>[...prev, months]);
+    const snap = undoStack[undoStack.length-1];
+    setUndoStack(p=>p.slice(0,-1));
+    setMonths(snap);
+  };
+  const redo = () => {
+    if(redoStack.length===0) return;
+    setUndoStack(prev=>[...prev, months]);
+    const snap = redoStack[redoStack.length-1];
+    setRedoStack(p=>p.slice(0,-1));
+    setMonths(snap);
+  };
 
   /* ── expense wizard ── */
   const [wizard, setWizard] = useState(null);
