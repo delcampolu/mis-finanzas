@@ -292,7 +292,7 @@ export default function App() {
   ];
 
   return (
-    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",minHeight:"100dvh",background:"#f8f8f6",color:"#18181b"}}>
+    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",minHeight:"100vh",background:"#f8f8f6",color:"#18181b"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
@@ -337,7 +337,7 @@ export default function App() {
           .sidebar{position:sticky;top:0;height:100vh;transform:none!important}
           .overlay{display:none!important}
           .hamburger{display:none!important}
-          .layout{display:flex;min-height:100dvh}
+          .layout{display:flex;min-height:100vh}
           .main{flex:1;overflow:auto;padding:32px 36px 48px}
           .wizard-sheet{border-radius:16px;margin-bottom:40px}
         }
@@ -524,7 +524,7 @@ export default function App() {
 ══════════════════════════════════════════════ */
 function LoginScreen({users,onLogin}){
   return (
-    <div style={{minHeight:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8f8f6",fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8f8f6",fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
       <div style={{width:"100%",maxWidth:360,padding:"0 24px"}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{fontSize:28,fontWeight:600}}>Mis finanzas</div>
@@ -747,7 +747,9 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
 
   const totalRecurring=recurring.filter(r=>r.active).reduce((s,r)=>s+num(r.amount),0);
   const totalWithEfectivo=totalIncome+num(efectivo)+fciTotal;
-  const resultadoFull=totalWithEfectivo-totalOut-totalRecurring;
+  const pendCards=cards.filter(c=>c.owner===currentUser.id).reduce((s,c)=>s+num(md.cardPayments?.[c.id]??cardTotals[c.id]??0),0);
+  const pendFixed=recurring.filter(r=>r.active).reduce((s,r)=>s+num(md.fixedPayments?.[r.id]??r.amount),0);
+  const resultadoFull=totalWithEfectivo-pendCards-totalTransfer-pendFixed;
 
   return (
     <div>
@@ -794,17 +796,29 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
 
           {/* Gastos */}
           <div style={{background:"#fef2f2",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
-            {cards.filter(c=>c.owner===currentUser.id&&(cardTotals[c.id]||0)>0).map(c=>(
-              <div key={c.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                <span style={{color:"#dc2626",display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:2,background:c.color,display:"inline-block"}}/>{c.name}</span>
-                <span className="mono" style={{color:"#dc2626"}}>−{fmt(cardTotals[c.id])}</span>
-              </div>
-            ))}
+            {cards.filter(c=>c.owner===currentUser.id&&(cardTotals[c.id]||0)>0).map(c=>{
+              const pend=md.cardPayments?.[c.id]!==undefined?md.cardPayments[c.id]:cardTotals[c.id];
+              const pagado=num(pend)===0;
+              return (
+                <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,marginBottom:4}}>
+                  <span style={{color:pagado?"#a1a1aa":"#dc2626",display:"flex",alignItems:"center",gap:4,textDecoration:pagado?"line-through":"none"}}>
+                    <span style={{width:6,height:6,borderRadius:2,background:c.color,display:"inline-block"}}/>
+                    {c.name}
+                  </span>
+                  <input className="mono" type="number" value={pend}
+                    onChange={e=>upd(d=>({...d,cardPayments:{...(d.cardPayments||{}),[c.id]:+e.target.value}}))}
+                    style={{width:90,textAlign:"right",fontSize:12,border:"none",background:"transparent",color:pagado?"#a1a1aa":"#dc2626",fontFamily:"'DM Mono',monospace",textDecoration:pagado?"line-through":"none"}}/>
+                </div>
+              );
+            })}
             {totalTransfer>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:"#dc2626"}}>Transf/Efect</span><span className="mono" style={{color:"#dc2626"}}>−{fmt(totalTransfer)}</span></div>}
             {totalRecurring>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:"#dc2626"}}>Gastos fijos</span><span className="mono" style={{color:"#dc2626"}}>−{fmt(totalRecurring)}</span></div>}
             <div style={{borderTop:"1px solid #fecaca",marginTop:6,paddingTop:6,display:"flex",justifyContent:"space-between",fontWeight:600,fontSize:13}}>
               <span style={{color:"#dc2626"}}>Total gastos</span>
-              <span className="mono" style={{color:"#dc2626"}}>−{fmt(totalOut+totalRecurring)}</span>
+              <span className="mono" style={{color:"#dc2626"}}>−{fmt(
+                cards.filter(c=>c.owner===currentUser.id).reduce((s,c)=>s+num(md.cardPayments?.[c.id]??cardTotals[c.id]??0),0)
+                +totalTransfer+totalRecurring
+              )}</span>
             </div>
           </div>
 
