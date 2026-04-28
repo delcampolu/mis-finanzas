@@ -903,65 +903,6 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
       <div className="card" style={{padding:18,marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
           <span className="sec">Gastos fijos recurrentes</span>
-          <span className="mono" style={{fontSize:12,color:"#dc2626"}}>{fmt(totalRecurring)}</span>
-        </div>
-        <p style={{fontSize:11,color:"#a1a1aa",marginBottom:10}}>Se replican automáticamente cada mes. Editá el monto cuando cambie.</p>
-        {recurring.map(r=>(
-          <div key={r.id} className="row">
-            <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
-              <input type="checkbox" className="check" checked={r.active} onChange={()=>setRecurring(p=>p.map(x=>x.id===r.id?{...x,active:!x.active}:x))}/>
-              <input className="inp" value={r.name} onChange={e=>setRecurring(p=>p.map(x=>x.id===r.id?{...x,name:e.target.value}:x))}
-                style={{border:"none",background:"transparent",fontWeight:500,fontSize:13,padding:"2px 0",color:r.active?"#18181b":"#a1a1aa"}}/>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <input className="inp mono" type="number" value={r.amount} onChange={e=>setRecurring(p=>p.map(x=>x.id===r.id?{...x,amount:+e.target.value}:x))}
-                style={{width:105,textAlign:"right",fontSize:13,color:r.active?"#18181b":"#a1a1aa"}}/>
-              <button className="btn btn-red" style={{padding:"4px 7px",fontSize:11}} onClick={()=>setRecurring(p=>p.filter(x=>x.id!==r.id))}>✕</button>
-            </div>
-          </div>
-        ))}
-        <button className="btn btn-ghost" style={{marginTop:10,fontSize:12,width:"100%"}}
-          onClick={()=>setRecurring(p=>[...p,{id:uid(),name:"Nuevo fijo",amount:0,active:true,userId:currentUser.id}])}>
-          + Agregar fijo
-        </button>
-      </div>
-
-      {/* TARJETAS — lista editable */}
-      <div className="card" style={{padding:18,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
-          <span className="sec">Resumen por tarjeta</span>
-          <span className="mono" style={{fontSize:12,color:"#dc2626"}}>
-            {fmt(cards.filter(c=>c.owner===currentUser.id).reduce((s,c)=>s+num(md.cardPayments?.[c.id]??cardTotals[c.id]??0),0))}
-          </span>
-        </div>
-        <p style={{fontSize:11,color:"#a1a1aa",marginBottom:10}}>Poné en 0 cuando pagás la tarjeta.</p>
-        {cards.filter(c=>c.owner===currentUser.id&&(cardTotals[c.id]||0)>0).map(c=>{
-          const pendiente = md.cardPayments?.[c.id] !== undefined ? md.cardPayments[c.id] : cardTotals[c.id];
-          const pagado = num(pendiente) === 0;
-          return (
-            <div key={c.id} className="row">
-              <div style={{display:"flex",alignItems:"center",gap:9,flex:1}}>
-                <input type="checkbox" className="check" checked={pagado}
-                  onChange={()=>upd(d=>({...d,cardPayments:{...(d.cardPayments||{}),[c.id]:pagado?cardTotals[c.id]:0}}))}/>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{width:8,height:8,borderRadius:2,background:c.color,display:"inline-block"}}/>
-                  <span style={{fontSize:13,fontWeight:500,color:pagado?"#a1a1aa":"#18181b",textDecoration:pagado?"line-through":"none"}}>{c.name}</span>
-                </div>
-              </div>
-              <input className="inp mono" type="number" value={pendiente}
-                onChange={e=>upd(d=>({...d,cardPayments:{...(d.cardPayments||{}),[c.id]:+e.target.value}}))}
-                style={{width:120,textAlign:"right",fontSize:13,color:pagado?"#a1a1aa":"#dc2626"}}/>
-            </div>
-          );
-        })}
-        {cards.filter(c=>c.owner===currentUser.id&&(cardTotals[c.id]||0)>0).length===0&&
-          <div style={{fontSize:13,color:"#a1a1aa"}}>Sin gastos con tarjeta este mes</div>}
-      </div>
-
-      {/* GASTOS FIJOS RECURRENTES — igual que antes + editable a 0 */}
-      <div className="card" style={{padding:18,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
-          <span className="sec">Gastos fijos recurrentes</span>
           <span className="mono" style={{fontSize:12,color:"#dc2626"}}>
             {fmt(recurring.filter(r=>r.active).reduce((s,r)=>s+num(md.fixedPayments?.[r.id]??r.amount),0))}
           </span>
