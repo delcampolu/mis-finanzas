@@ -193,11 +193,14 @@ export default function App() {
 
   /* ── month data ── */
   const key = mk(sY,sM);
-  // Load historical data once on first load
+  // Load historical data ONCE - use a version flag to avoid re-loading
   useEffect(()=>{
+    const DATA_VERSION = "v3"; // bump this if you need to reload data
+    const loaded = localStorage.getItem("histDataLoaded");
+    if(loaded === DATA_VERSION) return; // already loaded, skip
+    
     setMonths(prev=>{
       const updated = {...prev};
-      let changed = false;
       // Load historical cash expenses
       Object.entries(HISTORICAL_DATA).forEach(([hKey, hExps])=>{
         if(!updated[hKey]){
@@ -206,17 +209,15 @@ export default function App() {
             parseInt(hKey.split('-')[1])-1,
             clientsL, clientsT
           );
-          changed = true;
         }
         const existing = updated[hKey].expenses || [];
-        const existingDescs = new Set(existing.map(e=>e.desc+e.amount+e.userId));
-        const newExps = hExps.filter(e=>!existingDescs.has(e.desc+e.amount+e.userId));
-        if(newExps.length > 0){
-          updated[hKey] = {...updated[hKey], expenses:[...existing, ...newExps]};
-          changed = true;
-        }
+        // Remove any previously loaded historical data first to avoid dupes
+        const nonHist = existing.filter(e=>e.payType!=="card"?!HISTORICAL_DATA[hKey]?.some(h=>h.id===e.id):true);
+        const allIds = new Set(nonHist.map(e=>e.id));
+        const newHistExps = hExps.filter(e=>!allIds.has(e.id));
+        updated[hKey] = {...updated[hKey], expenses:[...nonHist, ...newHistExps]};
       });
-      // Load card expenses
+      // Load card expenses - replace any previously loaded card data
       Object.entries(CARD_EXPENSES_DATA).forEach(([hKey, hExps])=>{
         if(!updated[hKey]){
           updated[hKey] = buildMonth(
@@ -224,18 +225,16 @@ export default function App() {
             parseInt(hKey.split('-')[1])-1,
             clientsL, clientsT
           );
-          changed = true;
         }
         const existing = updated[hKey].expenses || [];
-        const existingDescs = new Set(existing.map(e=>e.desc+e.amount+e.payMethodId));
-        const newExps = hExps.filter(e=>!existingDescs.has(e.desc+e.amount+e.payMethodId));
-        if(newExps.length > 0){
-          updated[hKey] = {...updated[hKey], expenses:[...existing, ...newExps]};
-          changed = true;
-        }
+        // Keep only non-card expenses (or cards not from our preloaded set)
+        const preloadedCardIds = new Set(CARD_EXPENSES_DATA[hKey]?.map(e=>e.id)||[]);
+        const keepExps = existing.filter(e=>!preloadedCardIds.has(e.id)&&!(e.payType==="card"&&e.userId==="lucia"&&["c1","c2","c3","c4"].includes(e.payMethodId)));
+        updated[hKey] = {...updated[hKey], expenses:[...keepExps, ...hExps]};
       });
-      return changed ? updated : prev;
+      return updated;
     });
+    localStorage.setItem("histDataLoaded", DATA_VERSION);
   },[]);
 
   useEffect(()=>{
@@ -827,7 +826,12 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
 
   const totalRecurring=recurring.filter(r=>r.active).reduce((s,r)=>s+num(r.amount),0);
   const totalWithEfectivo=totalIncome+num(efectivo)+fciTotal;
-  const pendCards=cards.filter(c=>c.owner===currentUser.id).reduce((s,c)=>s+num(md.cardPayments?.[c.id]??cardTotals[c.id]??0),0);
+  // pendCards uses cardTotals which already excludes Mamá expenses
+  const pendCards=cards.filter(c=>c.owner===currentUser.id).reduce((s,c)=>{
+    const base = cardTotals[c.id]??0; // already excludes Mamá
+    const override = md.cardPayments?.[c.id];
+    return s + num(override!==undefined ? override : base);
+  },0);
   const pendFixed=recurring.filter(r=>r.active).reduce((s,r)=>s+num(md.fixedPayments?.[r.id]??r.amount),0);
   const resultadoFull=totalWithEfectivo-pendCards-totalTransfer-pendFixed;
 
@@ -885,9 +889,15 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
                     <span style={{width:6,height:6,borderRadius:2,background:c.color,display:"inline-block"}}/>
                     {c.name}
                   </span>
-                  <input className="mono" type="number" value={pend}
-                    onChange={e=>upd(d=>({...d,cardPayments:{...(d.cardPayments||{}),[c.id]:+e.target.value}}))}
-                    style={{width:90,textAlign:"right",fontSize:12,border:"none",background:"transparent",color:pagado?"#a1a1aa":"#dc2626",fontFamily:"'DM Mono',monospace",textDecoration:pagado?"line-through":"none"}}/>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <input className="mono" type="number" value={pend}
+                      onChange={e=>upd(d=>({...d,cardPayments:{...(d.cardPayments||{}),[c.id]:+e.target.value}}))}
+                      style={{width:85,textAlign:"right",fontSize:12,border:"none",background:"transparent",color:pagado?"#a1a1aa":"#dc2626",fontFamily:"'DM Mono',monospace",textDecoration:pagado?"line-through":"none"}}/>
+                    {md.cardPayments?.[c.id]!==undefined&&(
+                      <button onClick={()=>upd(d=>{const cp={...d.cardPayments};delete cp[c.id];return{...d,cardPayments:cp};})}
+                        style={{background:"none",border:"none",cursor:"pointer",color:"#a1a1aa",fontSize:10,padding:0}} title="Recalcular">↺</button>
+                    )}
+                  </div>
                 </div>
               );
             })}
