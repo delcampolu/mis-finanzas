@@ -277,9 +277,16 @@ export default function App() {
   const myExp    = expenses.filter(e=>e.userId===currentUser?.id);
   const allCards = cards.filter(c=>c.owner===currentUser?.id);
 
+  // Card totals split: mine vs Mamá
   const cardTotals = useMemo(()=>{
     const map={};
-    myExp.filter(e=>e.payType==="card").forEach(e=>{ map[e.payMethodId]=(map[e.payMethodId]||0)+num(e.amount); });
+    myExp.filter(e=>e.payType==="card"&&e.owner!=="Mamá").forEach(e=>{ map[e.payMethodId]=(map[e.payMethodId]||0)+num(e.amount); });
+    return map;
+  },[myExp]);
+
+  const cardTotalsMama = useMemo(()=>{
+    const map={};
+    myExp.filter(e=>e.payType==="card"&&e.owner==="Mamá").forEach(e=>{ map[e.payMethodId]=(map[e.payMethodId]||0)+num(e.amount); });
     return map;
   },[myExp]);
 
@@ -294,6 +301,7 @@ export default function App() {
   });
   const totalIncome = myClients.reduce((s,c)=>s+num(c.amount),0);
   const totalCards  = Object.values(cardTotals).reduce((s,v)=>s+v,0);
+  const totalMama   = Object.values(cardTotalsMama).reduce((s,v)=>s+v,0);
   const totalTransfer = transferExp.reduce((s,e)=>s+num(e.amount),0);
   const totalOut    = totalCards + totalTransfer;
   const resultado   = totalIncome - totalOut;
@@ -487,8 +495,9 @@ export default function App() {
               currentUser={currentUser} MONTHS={MONTHS} sM={sM} sY={sY}
               myClients={myClients} setMyClients={setMyClients}
               myExp={myExp} cards={cards.filter(c=>c.owner===currentUser.id)}
-              cardTotals={cardTotals} transferExp={transferExp}
-              totalIncome={totalIncome} totalCards={totalCards}
+              cardTotals={cardTotals} cardTotalsMama={cardTotalsMama}
+              transferExp={transferExp}
+              totalIncome={totalIncome} totalCards={totalCards} totalMama={totalMama}
               totalTransfer={totalTransfer} totalOut={totalOut} resultado={resultado}
               fciTotal={fciTotal} setFciTotal={setFciTotal}
               efectivo={efectivo} setEfectivo={setEfectivo}
@@ -792,7 +801,7 @@ function ExpenseWizard({wizard,setWizard,categories,cards,payMethods,sM,sY,MONTH
 /* ══════════════════════════════════════════════
    RESUMEN TAB
 ══════════════════════════════════════════════ */
-function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards,cardTotals,transferExp,totalIncome,totalCards,totalTransfer,totalOut,resultado,fciTotal,setFciTotal,efectivo,setEfectivo,recurring,setRecurring,upd,md,fmt,num,uid,openWizard,months,mk,CY,clientsL,clientsT}){
+function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards,cardTotals,cardTotalsMama,transferExp,totalIncome,totalCards,totalMama,totalTransfer,totalOut,resultado,fciTotal,setFciTotal,efectivo,setEfectivo,recurring,setRecurring,upd,md,fmt,num,uid,openWizard,months,mk,CY,clientsL,clientsT}){
   const [editEfectivo,setEditEfectivo]=useState(false);
   const [efForm,setEfForm]=useState(String(efectivo));
 
