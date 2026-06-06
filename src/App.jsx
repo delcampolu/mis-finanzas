@@ -425,6 +425,7 @@ export default function App() {
           .topbar{display:flex;align-items:center;justify-content:space-between;padding:13px 14px 10px 52px;background:#fff;border-bottom:1px solid #e4e4e7;position:sticky;top:0;z-index:30}
           .g2{grid-template-columns:1fr}
           .g3{grid-template-columns:1fr 1fr}
+          .months-grid{grid-template-columns:1fr!important}
         }
       `}</style>
 
@@ -841,7 +842,7 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
       </div>
 
       {/* MES ACTUAL Y SIGUIENTE LADO A LADO */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}} className="months-grid">
 
         {/* MES ACTUAL */}
         <div className="card" style={{padding:16,borderTop:"3px solid #6366f1"}}>
@@ -894,10 +895,7 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
             {totalRecurring>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:"#dc2626"}}>Gastos fijos</span><span className="mono" style={{color:"#dc2626"}}>−{fmt(totalRecurring)}</span></div>}
             <div style={{borderTop:"1px solid #fecaca",marginTop:6,paddingTop:6,display:"flex",justifyContent:"space-between",fontWeight:600,fontSize:13}}>
               <span style={{color:"#dc2626"}}>Total gastos</span>
-              <span className="mono" style={{color:"#dc2626"}}>−{fmt(
-                cards.filter(c=>c.owner===currentUser.id).reduce((s,c)=>s+num(md.cardPayments?.[c.id]??cardTotals[c.id]??0),0)
-                +totalTransfer+totalRecurring
-              )}</span>
+              <span className="mono" style={{color:"#dc2626"}}>−{fmt(pendCards+totalTransfer+totalRecurring)}</span>
             </div>
           </div>
 
