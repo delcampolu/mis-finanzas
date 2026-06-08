@@ -162,6 +162,7 @@ export default function App() {
   const [sY,          setSY]          = useState(CY);
   const [sM,          setSM]          = useState(CM);
   const [sideOpen,    setSideOpen]    = useState(false);
+  const [showVoice,   setShowVoice]   = useState(false);
   const [undoStack,   setUndoStack]   = useState([]);
   const [redoStack,   setRedoStack]   = useState([]);
 
@@ -435,6 +436,17 @@ export default function App() {
       `}</style>
 
       {/* WIZARD */}
+      {showVoice && (
+        <VoiceWizard
+          onClose={()=>setShowVoice(false)}
+          onSave={(form)=>{setShowVoice(false);saveExpense(form);}}
+          cards={cards.filter(c=>c.owner===currentUser.id)}
+          categories={categories} payMethods={payMethods}
+          MONTHS={MONTHS} CY={CY} currentUser={currentUser}
+          sM={sM} sY={sY}
+        />
+      )}
+
       {wizard && (
         <ExpenseWizard
           wizard={wizard} setWizard={setWizard}
@@ -848,7 +860,10 @@ function ResumenTab({currentUser,MONTHS,sM,sY,myClients,setMyClients,myExp,cards
           <h1 style={{fontSize:20,fontWeight:600}}>Mi resumen</h1>
           <div style={{fontSize:13,color:"#71717a"}}>{currentUser.name}</div>
         </div>
-        <button className="btn btn-dark" onClick={openWizard}>+ Gasto</button>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn btn-ghost" onClick={()=>setShowVoice(true)} style={{fontSize:18,padding:"8px 12px"}}>🎤</button>
+          <button className="btn btn-dark" onClick={openWizard}>+ Gasto</button>
+        </div>
       </div>
 
       {/* MES ACTUAL Y SIGUIENTE LADO A LADO */}
@@ -1082,7 +1097,10 @@ function GastosTab({currentUser,myExp,cards,categories,payMethods,openWizard,upd
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <h1 style={{fontSize:20,fontWeight:600}}>Mis gastos — {MONTHS[sM]} {sY}</h1>
-        <button className="btn btn-dark" onClick={openWizard}>+ Gasto</button>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn btn-ghost" onClick={()=>setShowVoice(true)} style={{fontSize:18,padding:"8px 12px"}}>🎤</button>
+          <button className="btn btn-dark" onClick={openWizard}>+ Gasto</button>
+        </div>
       </div>
       {myExp.length===0 && (
         <div className="card" style={{padding:32,textAlign:"center",color:"#a1a1aa"}}>
@@ -2086,6 +2104,246 @@ function HistorialTab({currentUser,MONTHS,CY,categories,cards,payMethods,fmt,num
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════
+   VOICE WIZARD
+══════════════════════════════════════════════ */
+function VoiceWizard({onClose, onSave, cards, categories, payMethods, MONTHS, CY, currentUser, sM, sY}){
+  const [status, setStatus] = useState("idle"); // idle, listening, processing, confirm, error
+  const [transcript, setTranscript] = useState("");
+  const [parsed, setParsed] = useState(null);
+  const [missing, setMissing] = useState([]);
+  const [editField, setEditField] = useState(null);
+  const recognitionRef = { current: null };
+
+  const allPay = [...cards, ...payMethods];
+  const OWNERS = ["Casa","Personal","Mamá","Tomás","Otro"];
+
+  const startListening = () => {
+    try {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SpeechRecognition){ setStatus("error"); return; }
+      const rec = new SpeechRecognition();
+      rec.lang = "es-AR";
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      recognitionRef.current = rec;
+      rec.onstart = () => setStatus("listening");
+      rec.onresult = (e) => {
+        const text = e.results[0][0].transcript;
+        setTranscript(text);
+        setStatus("processing");
+        parseWithAI(text);
+      };
+      rec.onerror = (e) => {
+        console.log("Speech error:", e.error);
+        setStatus("error");
+      };
+      rec.onend = () => {};
+      rec.start();
+    } catch(e) {
+      console.log("Speech init error:", e);
+      setStatus("error");
+    }
+  };
+
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+    setStatus("idle");
+  };
+
+  const parseWithAI = async (text) => {
+    const cardNames = cards.map(c=>c.name).join(", ");
+    const catNames = categories.map(c=>c.name).join(", ");
+    const payNames = payMethods.map(p=>p.name).join(", ");
+    const prompt = `Sos un asistente de finanzas personales. El usuario dijo: "${text}"
+
+Extraé la información del gasto y respondé SOLO con JSON válido, sin texto adicional:
+{
+  "owner": "Casa|Personal|Mamá|Tomás|Otro",
+  "ownerCustom": "nombre si es Otro",
+  "category": "una de: ${catNames}",
+  "desc": "descripción breve",
+  "payMethodName": "una de: ${cardNames}, ${payNames}, Efectivo",
+  "isCard": true|false,
+  "cuotas": número (1 si no mencionó cuotas o es efectivo),
+  "startMonth": número de mes 0-11 (mes actual si no mencionó),
+  "startYear": ${sY},
+  "amount": número (null si no mencionó),
+  "missing": ["lista de campos que faltan: owner/category/payMethodName/amount"]
+}
+
+Reglas:
+- Si dice "carne", "comida", "almuerzo", "cena" → category: "Comida / salida"
+- Si dice "super", "supermercado", "verdura", "verdulería" → category: "Supermercado" o "Verdulería"
+- Si dice "farmacia", "medicamento", "remedio" → category: "Salud"
+- Si dice "nafta", "combustible" → category: "Transporte"
+- Si dice "efectivo" o no menciona tarjeta → isCard: false, cuotas: 1
+- Si menciona una tarjeta específica → isCard: true
+- Si no menciona cuotas → cuotas: 1
+- "owner" es OBLIGATORIO si no lo dijo claramente ponelo en missing`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:500,
+          messages:[{role:"user",content:prompt}]
+        })
+      });
+      const data = await res.json();
+      const text2 = data.content?.[0]?.text||"{}";
+      const clean = text2.replace(/```json|```/g,"").trim();
+      const result = JSON.parse(clean);
+
+      // Find card ID from name
+      const payObj = allPay.find(p=>p.name?.toLowerCase()===result.payMethodName?.toLowerCase());
+      result.payMethodId = payObj?.id || "";
+      result.isCard = cards.some(c=>c.id===result.payMethodId);
+
+      setParsed(result);
+      setMissing(result.missing||[]);
+      setStatus("confirm");
+    } catch(e) {
+      setStatus("error");
+    }
+  };
+
+  const handleSave = () => {
+    if(!parsed) return;
+    const form = {
+      owner: parsed.owner==="Otro" ? (parsed.ownerCustom||"Otro") : parsed.owner,
+      ownerCustom: parsed.ownerCustom||"",
+      category: parsed.category,
+      desc: parsed.desc,
+      payMethodId: parsed.payMethodId,
+      cuotas: String(parsed.cuotas||1),
+      startMonth: String(parsed.startMonth??sM),
+      startYear: String(parsed.startYear||sY),
+      amount: String(parsed.amount||0),
+    };
+    onSave(form);
+  };
+
+  const Field = ({label, value, field, options}) => (
+    <div style={{marginBottom:10}}>
+      <div style={{fontSize:11,fontWeight:600,color:"#71717a",textTransform:"uppercase",letterSpacing:".07em",marginBottom:4}}>{label}</div>
+      {editField===field ? (
+        <div style={{display:"flex",gap:6}}>
+          {options ? (
+            <select className="inp" value={value} style={{flex:1}}
+              onChange={e=>{setParsed(p=>({...p,[field]:e.target.value}));setEditField(null);}}>
+              {options.map(o=><option key={o}>{o}</option>)}
+            </select>
+          ) : (
+            <input className="inp" value={value} style={{flex:1}}
+              onChange={e=>setParsed(p=>({...p,[field]:e.target.value}))}
+              onBlur={()=>setEditField(null)} autoFocus/>
+          )}
+        </div>
+      ) : (
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#f4f4f5",borderRadius:8,cursor:"pointer"}}
+          onClick={()=>setEditField(field)}>
+          <span style={{fontSize:13,fontWeight:500,color:value?"#18181b":"#dc2626"}}>{value||"⚠ Falta"}</span>
+          <span style={{fontSize:11,color:"#a1a1aa"}}>✎</span>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:560,padding:24,maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={{fontSize:17,fontWeight:600}}>Cargar gasto por voz</div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#71717a"}}>✕</button>
+        </div>
+
+        {status==="idle" && (
+          <div style={{textAlign:"center",padding:"20px 0"}}>
+            <button onClick={startListening}
+              style={{width:80,height:80,borderRadius:"50%",background:"#18181b",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:32}}>
+              🎤
+            </button>
+            <div style={{fontSize:14,color:"#71717a"}}>Tocá el micrófono y hablá</div>
+            <div style={{fontSize:12,color:"#a1a1aa",marginTop:8}}>Ej: "Casa, carne, Supervielle Visa, 3 cuotas desde julio, $15.000"</div>
+          </div>
+        )}
+
+        {status==="listening" && (
+          <div style={{textAlign:"center",padding:"20px 0"}}>
+            <button onClick={stopListening}
+              style={{width:80,height:80,borderRadius:"50%",background:"#ef4444",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:32,animation:"pulse 1s infinite"}}>
+              ⏹
+            </button>
+            <div style={{fontSize:14,color:"#ef4444",fontWeight:500}}>Escuchando...</div>
+            <div style={{fontSize:12,color:"#a1a1aa",marginTop:8}}>Hablá claramente. Tocá para detener.</div>
+            <style>{``}</style>
+          </div>
+        )}
+
+        {status==="processing" && (
+          <div style={{textAlign:"center",padding:"20px 0"}}>
+            <div style={{fontSize:32,marginBottom:12}}>⚙️</div>
+            <div style={{fontSize:14,color:"#71717a"}}>Procesando...</div>
+            {transcript && <div style={{fontSize:12,color:"#a1a1aa",marginTop:8,fontStyle:"italic"}}>"{transcript}"</div>}
+          </div>
+        )}
+
+        {status==="confirm" && parsed && (
+          <div>
+            {transcript && (
+              <div style={{background:"#f4f4f5",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#52525b",fontStyle:"italic"}}>
+                "{transcript}"
+              </div>
+            )}
+            {missing.length>0 && (
+              <div style={{background:"#fef9c3",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#854d0e"}}>
+                ⚠ Falta información: {missing.join(", ")}. Completá los campos antes de guardar.
+              </div>
+            )}
+            <Field label="Para quién" field="owner" value={parsed.owner} options={OWNERS}/>
+            <Field label="Descripción" field="desc" value={parsed.desc}/>
+            <Field label="Categoría" field="category" value={parsed.category} options={categories.map(c=>c.name)}/>
+            <Field label="Medio de pago" field="payMethodName" value={parsed.payMethodName}
+              options={allPay.map(p=>p.name)}/>
+            <Field label="Monto" field="amount" value={parsed.amount?String(parsed.amount):""}/>
+            {parsed.isCard && (
+              <>
+                <Field label="Cuotas" field="cuotas" value={String(parsed.cuotas||1)} options={["1","2","3","6","12","18","24"]}/>
+                <Field label="Mes inicio" field="startMonth" value={MONTHS[parsed.startMonth??sM]}
+                  options={MONTHS.map((m,i)=>m)}/>
+              </>
+            )}
+            <div style={{display:"flex",gap:10,marginTop:16}}>
+              <button className="btn btn-ghost" style={{flex:1}} onClick={()=>{setStatus("idle");setTranscript("");setParsed(null);}}>
+                🎤 Volver a grabar
+              </button>
+              <button className="btn btn-dark" style={{flex:1}}
+                disabled={missing.filter(f=>!parsed[f]).length>0}
+                onClick={handleSave}>
+                Guardar ✓
+              </button>
+            </div>
+          </div>
+        )}
+
+        {status==="error" && (
+          <div style={{textAlign:"center",padding:"20px 0"}}>
+            <div style={{fontSize:32,marginBottom:12}}>😕</div>
+            <div style={{fontSize:14,color:"#dc2626"}}>No pude procesar el audio</div>
+            <div style={{fontSize:12,color:"#a1a1aa",marginTop:8}}>Puede que el micrófono no esté disponible en este navegador</div>
+            <button className="btn btn-dark" style={{marginTop:16}} onClick={()=>setStatus("idle")}>Reintentar</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
