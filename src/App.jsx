@@ -295,7 +295,7 @@ export default function App() {
     return map;
   },[myExp]);
 
-  const transferExp = myExp.filter(e=>e.payType!=="card"&&!e.historical);
+  const transferExp = myExp.filter(e=>e.payType!=="card"&&!e.historical&&e.payMethodName!=="Efectivo");
 
   const myClients = currentUser?.id==="lucia"
     ? (md.clients_lucia||[])
