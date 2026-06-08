@@ -276,7 +276,13 @@ export default function App() {
   const myExp    = expenses.filter(e=>e.userId===currentUser?.id);
   const allCards = cards.filter(c=>c.owner===currentUser?.id);
 
-  // Card totals split: mine vs Mamá
+  // Card totals: ALL (for bank reconciliation), mine only (for resumen), mamá only
+  const cardTotalsAll = useMemo(()=>{
+    const map={};
+    myExp.filter(e=>e.payType==="card").forEach(e=>{ map[e.payMethodId]=(map[e.payMethodId]||0)+num(e.amount); });
+    return map;
+  },[myExp]);
+
   const cardTotals = useMemo(()=>{
     const map={};
     myExp.filter(e=>e.payType==="card"&&e.owner!=="Mamá").forEach(e=>{ map[e.payMethodId]=(map[e.payMethodId]||0)+num(e.amount); });
@@ -525,7 +531,7 @@ export default function App() {
             <TarjetasTab
               currentUser={currentUser} MONTHS={MONTHS} sM={sM} sY={sY}
               cards={cards.filter(c=>c.owner===currentUser.id)}
-              myExp={myExp} cardTotals={cardTotals} fmt={fmt} num={num}
+              myExp={myExp} cardTotals={cardTotalsAll} fmt={fmt} num={num}
               months={months} mk={mk} CY={CY} upd={upd}
             />
           )}
