@@ -89,6 +89,71 @@ const CARD_EXPENSES_DATA = {
   "2027-01": [{"id": "1k33jnt", "groupId": "41mlv7t", "userId": "lucia", "owner": "Personal", "category": "Seguro", "categoryName": "Seguro", "payMethodId": "c2", "payMethodName": "Supervielle MC", "payType": "card", "amount": 80505, "totalAmount": 80505, "cuotas": 1, "cuotaNum": 1, "desc": "Seguro", "date": "2027-01-01", "month": "Enero", "year": 2027}, {"id": "01tu45z", "groupId": "aoczmfn", "userId": "lucia", "owner": "Mamá", "category": "Remedio", "categoryName": "Remedio", "payMethodId": "c3", "payMethodName": "Supervielle Visa", "payType": "card", "amount": 9825, "totalAmount": 9825, "cuotas": 1, "cuotaNum": 1, "desc": "Remedio", "date": "2027-01-01", "month": "Enero", "year": 2027}, {"id": "izbmn79", "groupId": "nshbsqq", "userId": "lucia", "owner": "Personal", "category": "Seguro viaje", "categoryName": "Seguro viaje", "payMethodId": "c3", "payMethodName": "Supervielle Visa", "payType": "card", "amount": 18922.58, "totalAmount": 18922.58, "cuotas": 1, "cuotaNum": 1, "desc": "Seguro viaje", "date": "2027-01-01", "month": "Enero", "year": 2027}],
 };
 
+
+/* ─── FIREBASE FIRESTORE (REST API) ─── */
+const FB_PROJECT = "finanzas-casa-a3778";
+const FB_API_KEY = "AIzaSyCp9PRIIvdEWokGwajgbulcMU-RKBr-jcc";
+const FB_BASE = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
+
+async function fbGet(collection, docId) {
+  try {
+    const res = await fetch(`${FB_BASE}/${collection}/${docId}?key=${FB_API_KEY}`);
+    if(!res.ok) return null;
+    const data = await res.json();
+    return data.fields ? JSON.parse(data.fields.data.stringValue) : null;
+  } catch(e) { return null; }
+}
+
+async function fbSet(collection, docId, value) {
+  try {
+    await fetch(`${FB_BASE}/${collection}/${docId}?key=${FB_API_KEY}`, {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        fields: { data: { stringValue: JSON.stringify(value) } }
+      })
+    });
+  } catch(e) { console.log("Firebase write error:", e); }
+}
+
+async function fbLoadUserData(userId) {
+  const data = await fbGet("usuarios", userId);
+  return data;
+}
+
+async function fbSaveUserData(userId, data) {
+  await fbSet("usuarios", userId, data);
+}
+
+async function fbLoadSharedData() {
+  const data = await fbGet("shared", "months");
+  return data;
+}
+
+async function fbSaveSharedData(data) {
+  await fbSet("shared", "months", data);
+}
+
+/* ─── FIREBASE AUTH (REST API) ─── */
+const FB_AUTH_BASE = "https://identitytoolkit.googleapis.com/v1";
+
+async function fbSignIn(email, password) {
+  try {
+    const res = await fetch(`${FB_AUTH_BASE}/accounts:signInWithPassword?key=${FB_API_KEY}`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({email, password, returnSecureToken: true})
+    });
+    const data = await res.json();
+    if(data.idToken) {
+      return {ok: true, token: data.idToken, uid: data.localId, email: data.email};
+    }
+    return {ok: false, error: data.error?.message || "Error"};
+  } catch(e) {
+    return {ok: false, error: "Sin conexión"};
+  }
+}
+
 const buildMonth = (y,m,cL,cT) => ({
   key:mk(y,m),
   expenses:[],
@@ -172,6 +237,7 @@ export default function App() {
   const [categories,  setCategories]  = useState(()=>load("categories",  INIT_CATS));
   const [months,      setMonths]      = useState(()=>load("months",      {}));
   const [fciTotal,    setFciTotal]    = useState(()=>load("fciTotal",    0));
+  const [fbLoaded,    setFbLoaded]    = useState(false);
   const [clientsL,    setClientsL]    = useState(()=>load("clientsL",    INIT_CLIENTS_LUCIA));
   const [clientsT,    setClientsT]    = useState(()=>load("clientsT",    INIT_CLIENTS_TOMAS));
   const [sheetsConfig,setSheetsConfig]= useState(()=>load("sheetsConfig",{sheetId:"",apiKey:""})); // kept for compat
@@ -184,7 +250,13 @@ export default function App() {
   useEffect(()=>save("payMethods",  payMethods),  [payMethods]);
   useEffect(()=>save("categories",  categories),  [categories]);
   useEffect(()=>save("months",      months),      [months]);
-  useEffect(()=>save("fciTotal",    fciTotal),    [fciTotal]);
+  useEffect(()=>{
+    save("fciTotal", fciTotal);
+    clearTimeout(window._fbFciTimer);
+    window._fbFciTimer = setTimeout(()=>{
+      fbSet("shared", "fciTotal", {value: fciTotal});
+    }, 1000);
+  },[fciTotal]);
   useEffect(()=>save("clientsL",    clientsL),    [clientsL]);
   useEffect(()=>save("clientsT",    clientsT),    [clientsT]);
   useEffect(()=>save("sheetsConfig",sheetsConfig),[sheetsConfig]);
@@ -619,24 +691,69 @@ export default function App() {
 /* ══════════════════════════════════════════════
    LOGIN
 ══════════════════════════════════════════════ */
-function LoginScreen({users,onLogin}){
+function LoginScreen({users, onLogin}){
+  const [selUser, setSelUser] = useState(null);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const USER_EMAILS = {
+    "lucia": "luciadelcampoa@gmail.com",
+    "tomas": "tomigarciacrocco@gmail.com"
+  };
+
+  const handleLogin = async () => {
+    if(!selUser || !password) return;
+    setLoading(true);
+    setError("");
+    const email = USER_EMAILS[selUser.id];
+    const result = await fbSignIn(email, password);
+    setLoading(false);
+    if(result.ok) {
+      onLogin(selUser);
+    } else {
+      setError("Contraseña incorrecta");
+    }
+  };
+
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8f8f6",fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
       <div style={{width:"100%",maxWidth:360,padding:"0 24px"}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{fontSize:28,fontWeight:600}}>Mis finanzas</div>
-          <div style={{fontSize:14,color:"#71717a",marginTop:6}}>¿Quién sos?</div>
+          <div style={{fontSize:14,color:"#71717a",marginTop:6}}>{selUser ? `Hola ${selUser.name}` : "¿Quién sos?"}</div>
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {users.map(u=>(
-            <button key={u.id} onClick={()=>onLogin(u)} style={{background:"#fff",border:"1px solid #e4e4e7",borderRadius:16,padding:"18px 22px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",fontFamily:"inherit",transition:"all .15s",textAlign:"left"}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=u.color;e.currentTarget.style.background=u.color+"10";}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor="#e4e4e7";e.currentTarget.style.background="#fff";}}>
-              <div style={{width:48,height:48,borderRadius:"50%",background:u.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:600,color:"#fff",flexShrink:0}}>{u.initials}</div>
-              <span style={{fontSize:17,fontWeight:500,color:"#18181b"}}>{u.name}</span>
+        {!selUser ? (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {users.map(u=>(
+              <button key={u.id} onClick={()=>setSelUser(u)}
+                style={{background:"#fff",border:"1px solid #e4e4e7",borderRadius:16,padding:"18px 22px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",fontFamily:"inherit",transition:"all .15s",textAlign:"left"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=u.color;e.currentTarget.style.background=u.color+"10";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="#e4e4e7";e.currentTarget.style.background="#fff";}}>
+                <div style={{width:48,height:48,borderRadius:"50%",background:u.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:600,color:"#fff",flexShrink:0}}>{u.initials}</div>
+                <span style={{fontSize:17,fontWeight:500,color:"#18181b"}}>{u.name}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="card" style={{padding:24}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+              <button onClick={()=>{setSelUser(null);setPassword("");setError("");}}
+                style={{background:"none",border:"none",cursor:"pointer",color:"#a1a1aa",fontSize:18}}>←</button>
+              <div style={{width:36,height:36,borderRadius:"50%",background:selUser.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:600,color:"#fff"}}>{selUser.initials}</div>
+              <span style={{fontSize:15,fontWeight:500}}>{selUser.name}</span>
+            </div>
+            <div style={{fontSize:13,color:"#71717a",marginBottom:8}}>Contraseña</div>
+            <input className="inp" type="password" placeholder="••••••••" value={password}
+              onChange={e=>setPassword(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+              style={{marginBottom:error?8:12}} autoFocus/>
+            {error && <div style={{fontSize:12,color:"#dc2626",marginBottom:10,textAlign:"center"}}>{error}</div>}
+            <button className="btn btn-dark" style={{width:"100%"}} onClick={handleLogin} disabled={loading}>
+              {loading ? "Entrando..." : "Entrar"}
             </button>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
