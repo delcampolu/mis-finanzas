@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, Cell } from "recharts";
 
 /* ─── UTILS ─── */
@@ -92,7 +92,7 @@ const CARD_EXPENSES_DATA = {
 
 /* ─── FIREBASE FIRESTORE (REST API) ─── */
 const FB_PROJECT = "finanzas-casa-a3778";
-const FB_API_KEY = "AIzaSyCp9PRIIvdEWokGwajgbulcMU-RKBr-jcc";
+const FB_API_KEY = import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDhriHZgtmBvqg67YKTkiF4uvfUUgQWAQs";
 const FB_BASE = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
 async function fbGet(collection, docId) {
@@ -218,7 +218,36 @@ async function syncFci(mov, saldoTotal) {
 /* ══════════════════════════════════════════════
    APP
 ══════════════════════════════════════════════ */
+function ErrorFallback({error}) {
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8f8f6",fontFamily:"sans-serif",padding:24,textAlign:"center"}}>
+      <div>
+        <div style={{fontSize:24,marginBottom:12}}>😕</div>
+        <div style={{fontSize:16,fontWeight:600,marginBottom:8}}>Algo salió mal</div>
+        <div style={{fontSize:13,color:"#71717a",marginBottom:16}}>{error?.message||"Error desconocido"}</div>
+        <button onClick={()=>window.location.reload()} style={{background:"#18181b",color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontSize:14,cursor:"pointer"}}>
+          Recargar app
+        </button>
+      </div>
+    </div>
+  );
+}
+
+class AppErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = {hasError:false, error:null}; }
+  static getDerivedStateFromError(error) { return {hasError:true, error}; }
+  componentDidCatch(error, info) { console.log("App error:", error, info); }
+  render() {
+    if(this.state.hasError) return <ErrorFallback error={this.state.error}/>;
+    return this.props.children;
+  }
+}
+
 export default function App() {
+  return <AppErrorBoundary><AppInner/></AppErrorBoundary>;
+}
+
+function AppInner() {
   /* ── state ── */
   const [currentUser, setCurrentUser] = useState(null);
   const [pinInput,    setPinInput]    = useState("");
