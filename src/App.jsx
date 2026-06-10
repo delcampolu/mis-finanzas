@@ -126,12 +126,33 @@ async function fbSaveUserData(userId, data) {
 }
 
 async function fbLoadSharedData() {
-  const data = await fbGet("shared", "months");
-  return data;
+  try {
+    // Load all months from the months collection
+    const res = await fetch(`${FB_BASE}/months?key=${FB_API_KEY}`);
+    if(!res.ok) return null;
+    const data = await res.json();
+    if(!data.documents) return null;
+    const result = {};
+    data.documents.forEach(doc => {
+      const key = doc.name.split('/').pop().replace("_","-");
+      if(doc.fields?.data?.stringValue) {
+        try { result[key] = JSON.parse(doc.fields.data.stringValue); } catch(e){}
+      }
+    });
+    return Object.keys(result).length > 0 ? result : null;
+  } catch(e) { return null; }
 }
 
 async function fbSaveSharedData(data) {
-  await fbSet("shared", "months", data);
+  // Save each month as separate document to avoid 1MB limit
+  const promises = Object.entries(data).map(([key, val]) =>
+    fbSet("months", key.replace("-","_"), val)
+  );
+  await Promise.all(promises);
+}
+
+async function fbSaveMonth(key, val) {
+  await fbSet("months", key.replace("-","_"), val);
 }
 
 /* ─── FIREBASE AUTH (REST API) ─── */
@@ -1747,7 +1768,11 @@ function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categ
           <button className="btn btn-dark" style={{width:"100%"}} onClick={async()=>{
             setSyncStatus("syncing");
             try {
-              await fbSaveSharedData(months);
+              // Save each month separately
+              const entries = Object.entries(months).filter(([k,v])=>v && (v.expenses?.length>0||v.clients_lucia?.length>0||v.clients_tomas?.length>0));
+              for(const [key,val] of entries) {
+                await fbSaveMonth(key, val);
+              }
               await fbSet("shared","fciTotal",{value:fciTotal});
               setSyncStatus("ok");
               setTimeout(()=>setSyncStatus("idle"),3000);
