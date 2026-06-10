@@ -708,6 +708,7 @@ function AppInner() {
               setMonths={setMonths} months={months}
               setRecurringL={setRecurringL} setRecurringT={setRecurringT}
               recurringL={recurringL} recurringT={recurringT}
+              fciTotal={fciTotal}
             />
           )}
 
@@ -1491,7 +1492,8 @@ function FciTab({fciTotal,setFciTotal,md,upd,months,fmt,uid,num}){
 /* ══════════════════════════════════════════════
    CONFIG TAB
 ══════════════════════════════════════════════ */
-function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categories,setCategories,clientsL,setClientsL,clientsT,setClientsT,sheetsConfig,setSheetsConfig,currentUser,uid,setMonths,months,setRecurringL,setRecurringT,recurringL,recurringT}){
+function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categories,setCategories,clientsL,setClientsL,clientsT,setClientsT,sheetsConfig,setSheetsConfig,currentUser,uid,setMonths,months,setRecurringL,setRecurringT,recurringL,recurringT,fciTotal}){
+  const [syncStatus, setSyncStatus] = useState("idle");
   const [newCard,    setNewCard]   =useState({name:"",color:"#6366f1",owner:currentUser.id});
   const [newPay,     setNewPay]    =useState({name:"",icon:"💳"});
   const [newCat,     setNewCat]    =useState({name:"",icon:"📦"});
@@ -1736,6 +1738,27 @@ function ConfigTab({users,setUsers,cards,setCards,payMethods,setPayMethods,categ
               }}>+</button>
             </div>
           )}
+        </div>
+
+        {/* SYNC FIREBASE */}
+        <div className="card" style={{padding:18,marginBottom:12}}>
+          <div className="sec" style={{marginBottom:8}}>Sincronización en la nube</div>
+          <p style={{fontSize:12,color:"#71717a",marginBottom:12}}>Subí todos los datos al servidor para verlos desde el celular u otro dispositivo.</p>
+          <button className="btn btn-dark" style={{width:"100%"}} onClick={async()=>{
+            setSyncStatus("syncing");
+            try {
+              await fbSaveSharedData(months);
+              await fbSet("shared","fciTotal",{value:fciTotal});
+              setSyncStatus("ok");
+              setTimeout(()=>setSyncStatus("idle"),3000);
+            } catch(e) {
+              setSyncStatus("error");
+              setTimeout(()=>setSyncStatus("idle"),3000);
+            }
+          }}>
+            {syncStatus==="syncing"?"Subiendo datos...":syncStatus==="ok"?"✓ Datos sincronizados":syncStatus==="error"?"✕ Error al sincronizar":"☁ Subir datos al servidor"}
+          </button>
+          <p style={{fontSize:11,color:"#a1a1aa",marginTop:8}}>Después de subir, abrí la app en el celular y los datos van a aparecer automáticamente.</p>
         </div>
 
         {/* PINs */}
