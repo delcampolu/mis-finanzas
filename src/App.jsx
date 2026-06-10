@@ -92,7 +92,7 @@ const CARD_EXPENSES_DATA = {
 
 /* ─── FIREBASE FIRESTORE (REST API) ─── */
 const FB_PROJECT = "finanzas-casa-a3778";
-const FB_API_KEY = import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDhriHZgtmBvqg67YKTkiF4uvfUUgQWAQs";
+const FB_API_KEY = "AIzaSyDhriHZgtmBvqg67YKTkiF4uvfUUgQWAQs";
 const FB_BASE = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
 async function fbGet(collection, docId) {
