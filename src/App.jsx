@@ -97,7 +97,8 @@ const FB_BASE = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/data
 
 function fbHeaders() {
   const h = {"Content-Type": "application/json"};
-  if(FB_ID_TOKEN) h["Authorization"] = `Bearer ${FB_ID_TOKEN}`;
+  const token = getFbToken();
+  if(token) h["Authorization"] = `Bearer ${token}`;
   return h;
 }
 
@@ -166,7 +167,14 @@ async function fbSaveMonth(key, val) {
 /* ─── FIREBASE AUTH (REST API) ─── */
 const FB_AUTH_BASE = "https://identitytoolkit.googleapis.com/v1";
 
-let FB_ID_TOKEN = null; // stores auth token after login
+// Token management - persists across page reloads
+function getFbToken() {
+  return sessionStorage.getItem("fb_token") || null;
+}
+function setFbToken(token) {
+  if(token) sessionStorage.setItem("fb_token", token);
+  else sessionStorage.removeItem("fb_token");
+}
 
 async function fbSignIn(email, password) {
   try {
@@ -177,13 +185,18 @@ async function fbSignIn(email, password) {
     });
     const data = await res.json();
     if(data.idToken) {
-      FB_ID_TOKEN = data.idToken; // store token globally
+      setFbToken(data.idToken);
       return {ok: true, token: data.idToken, uid: data.localId, email: data.email};
     }
     return {ok: false, error: data.error?.message || "Error"};
   } catch(e) {
     return {ok: false, error: "Sin conexión"};
   }
+}
+
+async function fbRefreshToken(email, password) {
+  // Re-authenticate silently if token expired
+  return fbSignIn(email, password);
 }
 
 const buildMonth = (y,m,cL,cT) => ({
@@ -495,8 +508,21 @@ function AppInner() {
   };
 
   /* ── LOGIN SCREEN ── */
+  // Auto-restore session if token exists
+  useEffect(()=>{
+    const token = getFbToken();
+    const savedUser = sessionStorage.getItem("fb_user");
+    if(token && savedUser && !currentUser) {
+      const u = JSON.parse(savedUser);
+      setCurrentUser(u);
+    }
+  },[]);
+
   if(!currentUser) return (
-    <LoginScreen users={users} onLogin={(u)=>{setCurrentUser(u);}}/>
+    <LoginScreen users={users} onLogin={(u)=>{
+      setCurrentUser(u);
+      sessionStorage.setItem("fb_user", JSON.stringify(u));
+    }}/>
   );
 
   const TABS=[
@@ -601,7 +627,7 @@ function AppInner() {
           <button onClick={redo} disabled={redoStack.length===0} title="Rehacer"
             style={{background:"none",border:"1px solid #e4e4e7",borderRadius:8,padding:"5px 9px",cursor:redoStack.length===0?"not-allowed":"pointer",color:redoStack.length===0?"#d4d4d8":"#18181b",fontSize:14}}>↪</button>
           <div style={{width:28,height:28,borderRadius:"50%",background:currentUser.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,color:"#fff"}}>{currentUser.initials}</div>
-          <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setCurrentUser(null);}}>Salir</button>
+          <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setCurrentUser(null);setFbToken(null);sessionStorage.removeItem("fb_user");}}>Salir</button>
         </div>
       </div>
 
@@ -772,6 +798,7 @@ function LoginScreen({users, onLogin}){
     const result = await fbSignIn(email, password);
     setLoading(false);
     if(result.ok) {
+      sessionStorage.setItem("fb_user", JSON.stringify(selUser));
       onLogin(selUser);
     } else {
       setError("Contraseña incorrecta");
