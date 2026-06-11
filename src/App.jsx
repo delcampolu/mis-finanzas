@@ -95,9 +95,17 @@ const FB_PROJECT = "finanzas-casa-a3778";
 const FB_API_KEY = "AIzaSyDhriHZgtmBvqg67YKTkiF4uvfUUgQWAQs";
 const FB_BASE = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
+function fbHeaders() {
+  const h = {"Content-Type": "application/json"};
+  if(FB_ID_TOKEN) h["Authorization"] = `Bearer ${FB_ID_TOKEN}`;
+  return h;
+}
+
 async function fbGet(collection, docId) {
   try {
-    const res = await fetch(`${FB_BASE}/${collection}/${docId}?key=${FB_API_KEY}`);
+    const res = await fetch(`${FB_BASE}/${collection}/${docId}?key=${FB_API_KEY}`, {
+      headers: fbHeaders()
+    });
     if(!res.ok) return null;
     const data = await res.json();
     return data.fields ? JSON.parse(data.fields.data.stringValue) : null;
@@ -108,7 +116,7 @@ async function fbSet(collection, docId, value) {
   try {
     await fetch(`${FB_BASE}/${collection}/${docId}?key=${FB_API_KEY}`, {
       method: "PATCH",
-      headers: {"Content-Type": "application/json"},
+      headers: fbHeaders(),
       body: JSON.stringify({
         fields: { data: { stringValue: JSON.stringify(value) } }
       })
@@ -128,7 +136,7 @@ async function fbSaveUserData(userId, data) {
 async function fbLoadSharedData() {
   try {
     // Load all months from the months collection
-    const res = await fetch(`${FB_BASE}/months?key=${FB_API_KEY}`);
+    const res = await fetch(`${FB_BASE}/months?key=${FB_API_KEY}`, {headers: fbHeaders()});
     if(!res.ok) return null;
     const data = await res.json();
     if(!data.documents) return null;
@@ -158,6 +166,8 @@ async function fbSaveMonth(key, val) {
 /* ─── FIREBASE AUTH (REST API) ─── */
 const FB_AUTH_BASE = "https://identitytoolkit.googleapis.com/v1";
 
+let FB_ID_TOKEN = null; // stores auth token after login
+
 async function fbSignIn(email, password) {
   try {
     const res = await fetch(`${FB_AUTH_BASE}/accounts:signInWithPassword?key=${FB_API_KEY}`, {
@@ -167,6 +177,7 @@ async function fbSignIn(email, password) {
     });
     const data = await res.json();
     if(data.idToken) {
+      FB_ID_TOKEN = data.idToken; // store token globally
       return {ok: true, token: data.idToken, uid: data.localId, email: data.email};
     }
     return {ok: false, error: data.error?.message || "Error"};
