@@ -90,114 +90,76 @@ const CARD_EXPENSES_DATA = {
 };
 
 
-/* ─── FIREBASE FIRESTORE (REST API) ─── */
-const FB_PROJECT = "finanzas-casa-a3778";
-const FB_API_KEY = "AIzaSyDhriHZgtmBvqg67YKTkiF4uvfUUgQWAQs";
-const FB_BASE = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
+/* ─── FIREBASE SDK ─── */
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs } from "firebase/firestore";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 
-function fbHeaders() {
-  const h = {"Content-Type": "application/json"};
-  const token = getFbToken();
-  if(token) h["Authorization"] = `Bearer ${token}`;
-  return h;
+const firebaseConfig = {
+  apiKey: "AIzaSyDhriHZgtmBvqg67YKTkiF4uvfUUgQWAQs",
+  authDomain: "finanzas-casa-a3778.firebaseapp.com",
+  projectId: "finanzas-casa-a3778",
+  storageBucket: "finanzas-casa-a3778.firebasestorage.app",
+  messagingSenderId: "84720788386",
+  appId: "1:84720788386:web:33dfffa679cf156b6b48fb"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const fbDb = getFirestore(fbApp);
+const fbAuth = getAuth(fbApp);
+
+async function fbSignIn(email, password) {
+  try {
+    const cred = await signInWithEmailAndPassword(fbAuth, email, password);
+    return {ok: true, uid: cred.user.uid, email: cred.user.email};
+  } catch(e) {
+    return {ok: false, error: "Contraseña incorrecta"};
+  }
 }
 
-async function fbGet(collection, docId) {
+async function fbGet(collectionName, docId) {
   try {
-    const res = await fetch(`${FB_BASE}/${collection}/${docId}?key=${FB_API_KEY}`, {
-      headers: fbHeaders()
-    });
-    if(!res.ok) return null;
-    const data = await res.json();
-    return data.fields ? JSON.parse(data.fields.data.stringValue) : null;
-  } catch(e) { return null; }
+    const ref = doc(fbDb, collectionName, docId);
+    const snap = await getDoc(ref);
+    if(!snap.exists()) return null;
+    const data = snap.data();
+    return data.data ? JSON.parse(data.data) : null;
+  } catch(e) { console.log("fbGet error:", e); return null; }
 }
 
-async function fbSet(collection, docId, value) {
+async function fbSet(collectionName, docId, value) {
   try {
-    await fetch(`${FB_BASE}/${collection}/${docId}?key=${FB_API_KEY}`, {
-      method: "PATCH",
-      headers: fbHeaders(),
-      body: JSON.stringify({
-        fields: { data: { stringValue: JSON.stringify(value) } }
-      })
-    });
+    const ref = doc(fbDb, collectionName, docId);
+    await setDoc(ref, { data: JSON.stringify(value) });
   } catch(e) { console.log("Firebase write error:", e); }
-}
-
-async function fbLoadUserData(userId) {
-  const data = await fbGet("usuarios", userId);
-  return data;
-}
-
-async function fbSaveUserData(userId, data) {
-  await fbSet("usuarios", userId, data);
-}
-
-async function fbLoadSharedData() {
-  try {
-    // Load all months from the months collection
-    const res = await fetch(`${FB_BASE}/months?key=${FB_API_KEY}`, {headers: fbHeaders()});
-    if(!res.ok) return null;
-    const data = await res.json();
-    if(!data.documents) return null;
-    const result = {};
-    data.documents.forEach(doc => {
-      const key = doc.name.split('/').pop().replace("_","-");
-      if(doc.fields?.data?.stringValue) {
-        try { result[key] = JSON.parse(doc.fields.data.stringValue); } catch(e){}
-      }
-    });
-    return Object.keys(result).length > 0 ? result : null;
-  } catch(e) { return null; }
-}
-
-async function fbSaveSharedData(data) {
-  // Save each month as separate document to avoid 1MB limit
-  const promises = Object.entries(data).map(([key, val]) =>
-    fbSet("months", key.replace("-","_"), val)
-  );
-  await Promise.all(promises);
 }
 
 async function fbSaveMonth(key, val) {
   await fbSet("months", key.replace("-","_"), val);
 }
 
-/* ─── FIREBASE AUTH (REST API) ─── */
-const FB_AUTH_BASE = "https://identitytoolkit.googleapis.com/v1";
-
-// Token management - persists across page reloads
-function getFbToken() {
-  return sessionStorage.getItem("fb_token") || null;
-}
-function setFbToken(token) {
-  if(token) sessionStorage.setItem("fb_token", token);
-  else sessionStorage.removeItem("fb_token");
+async function fbSaveSharedData(data) {
+  const promises = Object.entries(data).map(([key, val]) =>
+    fbSaveMonth(key, val)
+  );
+  await Promise.all(promises);
 }
 
-async function fbSignIn(email, password) {
+async function fbLoadSharedData() {
   try {
-    const res = await fetch(`${FB_AUTH_BASE}/accounts:signInWithPassword?key=${FB_API_KEY}`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({email, password, returnSecureToken: true})
+    const snap = await getDocs(collection(fbDb, "months"));
+    const result = {};
+    snap.forEach(docSnap => {
+      const key = docSnap.id.replace("_","-");
+      const data = docSnap.data();
+      if(data.data) {
+        try { result[key] = JSON.parse(data.data); } catch(e){}
+      }
     });
-    const data = await res.json();
-    if(data.idToken) {
-      setFbToken(data.idToken);
-      return {ok: true, token: data.idToken, uid: data.localId, email: data.email};
-    }
-    return {ok: false, error: data.error?.message || "Error"};
-  } catch(e) {
-    return {ok: false, error: "Sin conexión"};
-  }
+    return Object.keys(result).length > 0 ? result : null;
+  } catch(e) { console.log("fbLoadSharedData error:", e); return null; }
 }
 
-async function fbRefreshToken(email, password) {
-  // Re-authenticate silently if token expired
-  return fbSignIn(email, password);
-}
 
 const buildMonth = (y,m,cL,cT) => ({
   key:mk(y,m),
@@ -508,14 +470,15 @@ function AppInner() {
   };
 
   /* ── LOGIN SCREEN ── */
-  // Auto-restore session if token exists
+  // Auto-restore session using Firebase auth state
   useEffect(()=>{
-    const token = getFbToken();
-    const savedUser = sessionStorage.getItem("fb_user");
-    if(token && savedUser && !currentUser) {
-      const u = JSON.parse(savedUser);
-      setCurrentUser(u);
-    }
+    const unsub = onAuthStateChanged(fbAuth, (user) => {
+      if(user && !currentUser) {
+        const savedUser = sessionStorage.getItem("fb_user");
+        if(savedUser) setCurrentUser(JSON.parse(savedUser));
+      }
+    });
+    return unsub;
   },[]);
 
   if(!currentUser) return (
@@ -627,7 +590,7 @@ function AppInner() {
           <button onClick={redo} disabled={redoStack.length===0} title="Rehacer"
             style={{background:"none",border:"1px solid #e4e4e7",borderRadius:8,padding:"5px 9px",cursor:redoStack.length===0?"not-allowed":"pointer",color:redoStack.length===0?"#d4d4d8":"#18181b",fontSize:14}}>↪</button>
           <div style={{width:28,height:28,borderRadius:"50%",background:currentUser.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,color:"#fff"}}>{currentUser.initials}</div>
-          <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setCurrentUser(null);setFbToken(null);sessionStorage.removeItem("fb_user");}}>Salir</button>
+          <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setCurrentUser(null);fbAuth.signOut();sessionStorage.removeItem("fb_user");}}>Salir</button>
         </div>
       </div>
 
